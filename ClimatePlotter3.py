@@ -14,6 +14,7 @@ from matplotlib.patches import Polygon
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from PyQt6.QtWidgets import *
 from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import *
 
 
 # from matplotlib.figure import Figure
@@ -539,7 +540,7 @@ class LectureMapApp(QMainWindow):
         else:
             return None, None
 
-    def read_excel(self, file_path):
+    def read_excel_file(self, file_path):
         try:
             df = pd.read_excel(file_path)
             return df
@@ -625,12 +626,12 @@ class LectureMapApp(QMainWindow):
             df1 = df.groupby('CityEventTotal')
             colors = iter(cm.gnuplot(np.linspace(0, 1, len(df1.groups))))
 
-            for k, d in df1:
-                msize = k * 10
+            for group_cluster, data in df1:
+                msize = group_cluster * 10
                 if msize > 50:
                     msize = 50
-                x, y = m(d['Longitude'], d['Latitude'])
-                ax.scatter(x, y, label=k, s=msize, color=next(colors))
+                x, y = m(data['Longitude'], data['Latitude'])
+                ax.scatter(x, y, label=group_cluster, s=msize, color=next(colors))
         save_path = os.path.join(os.path.dirname(__file__), save_path, f'{pd.Timestamp.now().strftime("%Y-%m-%d_H%HM%MS%S")}_{view}.png')
         # save_path = save_path + f'{pd.Timestamp.now().strftime("%Y-%m-%d_%H-%M-%S")}_{view}.png'
         plt.savefig(save_path, format='png', dpi=300)
@@ -638,7 +639,7 @@ class LectureMapApp(QMainWindow):
 
 
     def drawInitialMap(self):
-        df_fresks = self.read_excel(self.excelFilePath)
+        df_fresks = self.read_excel_file(self.excelFilePath)
         self.plot_map(df_fresks,
                  self.plotPath,
                  self.canvas,
@@ -816,6 +817,16 @@ class LectureMapApp(QMainWindow):
         for state in self.stateDict:
             self.stateCombo.addItem(state)
 
+        self.dateLabel = QLabel("Date (dd.MM.yyyy):", self)
+        self.dateEdit = QDateEdit(self)
+        self.dateEdit.setCalendarPopup(True)
+        self.dateEdit.setDisplayFormat("dd.MM.yyyy")
+        self.dateEdit.setDate(QDate.currentDate())
+        minDate = QDate(2020, 1, 1)
+        maxDate = QDate(2099, 12, 31)
+        self.dateEdit.setMinimumDate(minDate)
+        self.dateEdit.setMaximumDate(maxDate)
+
         self.tableLabel = QLabel("Tische:", self)
         self.tableEdit = QSpinBox(self)
         self.tableEdit.setMinimum(0)
@@ -845,13 +856,15 @@ class LectureMapApp(QMainWindow):
         InputBox.addWidget(self.plzEdit, 4, 1)
         InputBox.addWidget(self.stateLabel, 5, 0)
         InputBox.addWidget(self.stateCombo, 5, 1)
-        InputBox.addWidget(self.tableLabel, 6, 0)
-        InputBox.addWidget(self.tableEdit, 6, 1)
-        InputBox.addWidget(self.participantLabel, 7, 0)
-        InputBox.addWidget(self.participantEdit, 7, 1)
-        InputBox.addWidget(self.updateCsvButton, 8, 0)
-        InputBox.addWidget(self.plotButton, 8, 1)
-        InputBox.addWidget(self.clearAllButton, 9, 0, 1, 2)
+        InputBox.addWidget(self.dateLabel, 6, 0)
+        InputBox.addWidget(self.dateEdit, 6, 1)
+        InputBox.addWidget(self.tableLabel, 7, 0)
+        InputBox.addWidget(self.tableEdit, 7, 1)
+        InputBox.addWidget(self.participantLabel, 8, 0)
+        InputBox.addWidget(self.participantEdit, 8, 1)
+        InputBox.addWidget(self.updateCsvButton, 9, 0)
+        InputBox.addWidget(self.plotButton, 9, 1)
+        InputBox.addWidget(self.clearAllButton, 10, 0, 1, 2)
 
         '''
         middleBox
@@ -897,6 +910,7 @@ class LectureMapApp(QMainWindow):
         self.drawInitialMap()
 
     def onUpdateCsvButtonClicked(self):
+        date = self.dateEdit.text()
         name = self.nameEdit.text()
         address = self.addressEdit.text()
         city = self.cityEdit.text()
@@ -946,7 +960,7 @@ class LectureMapApp(QMainWindow):
             return list(self.cityDict.values())[radioButtonIndex], list(self.cityDict.keys())[radioButtonIndex]
 
     def onPlotButtonClicked(self):
-        df_fresks = self.read_excel(self.excelFilePath)
+        df_fresks = self.read_excel_file(self.excelFilePath)
         plotItem, plotItemName = self.getPlotItem()
         self.plot_map(df_fresks, self.plotPath, self.canvas, plotItem['lat_0'], plotItem['lon_0'], plotItem['llcrnrlat'],
                  plotItem['llcrnrlon'], plotItem['urcrnrlat'], plotItem['urcrnrlon'], plotItemName)
