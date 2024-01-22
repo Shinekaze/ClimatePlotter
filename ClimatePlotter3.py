@@ -538,36 +538,41 @@ class LectureMapApp(QMainWindow):
         if location:
             return location.latitude, location.longitude
         else:
+            # Todo: add error handling with try except
             return None, None
 
     def read_excel_file(self, file_path):
         try:
-            df = pd.read_excel(file_path)
-            return df
+            df_events = pd.read_excel(file_path, sheet_name=0)
+            df_stats = pd.read_excel(file_path, sheet_name=1)
+            return df_events, df_stats
         except pd.errors.EmptyDataError:
-            df = pd.DataFrame(
-                columns=['Name', 'City', 'State', 'PLZ', 'Latitude', 'Longitude', 'EventCount', 'CityEventTotal',
-                         'TotalTables', 'TotalParticipants'])
-            return df
+            df_events = pd.DataFrame(
+                columns=['Datum', 'Schul/Uni Name', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
+            df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude', 'EventCount',
+                                             'CityEventTotal', 'TotalTables', 'TotalParticipants'])
+            return df_events, df_stats
 
-    def update_excel(self, file_path, name, address, city, state, plz, lat, lon, tables=0,
+    def update_excel(self, file_path, date, name, address, city, state, plz, lat, lon, tables=0,
                      participants=0):
-        df = pd.read_excel(file_path)
-        school_exists = ((df['Name'] == name) & (df['City'] == city) & (df['State'] == state)).any().any()
+        df_events, df_stats = self.read_excel_file(file_path)
+        df_events.loc[len(df_events.index) + 1] = [date, name, address, city, state, plz, int(tables), int(participants)]
+        school_exists = ((df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city)).any().any()
         if school_exists:
-            df.loc[(df['Name'] == name) & (df['City'] == city) & (df['State'] == state), 'EventCount'] += 1
-            df.loc[(df['Name'] == name) & (df['City'] == city) & (df['State'] == state), 'TotalTables'] += int(tables)
-            df.loc[(df['Name'] == name) & (df['City'] == city) & (df['State'] == state), 'TotalParticipants'] += int(
-                participants)
+            df_stats.loc[(df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city), 'EventCount'] += 1
+            df_stats.loc[(df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city), 'TotalTables'] += int(tables)
+            df_stats.loc[(df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city), 'TotalParticipants'] += int(participants)
         else:
-            df.loc[len(df.index) + 1] = [name, address, city, state, plz, lat, lon, 1, -1, int(tables),
-                                         int(participants)]
-        city_event_total = df[df['City'] == city]['EventCount'].sum()
-        df.loc[df['City'] == city, 'CityEventTotal'] = int(city_event_total)
-        df.to_excel(file_path, index=False)
-        return df
+            df_stats.loc[len(df_stats.index) + 1] = [name, city, int(plz), lat, lon, 1, -1, int(tables),
+                                                     int(participants)]
+        city_event_total = df_stats[df_stats['Stadt'] == city]['EventCount'].sum()
+        df_stats.loc[df_stats['Stadt'] == city, 'CityEventTotal'] = int(city_event_total)
+        with pd.ExcelWriter(file_path) as writer:
+            df_events.to_excel(writer, sheet_name='Events', index=False)
+            df_stats.to_excel(writer, sheet_name='Stats', index=False)
+        return
 
-    def plot_map(self, df, save_path, canvas, lat, lon, llc_lat, llc_lon, urc_lat, urc_lon, view='Deutschland'):
+    def plot_map(self, df_events, df_stats, save_path, canvas, lat, lon, llc_lat, llc_lon, urc_lat, urc_lon, view='Deutschland'):
         canvas.figure.clf()
         ax = canvas.figure.add_subplot(111)
         '''
@@ -602,15 +607,25 @@ class LectureMapApp(QMainWindow):
 
         m.drawcoastlines()
         if view in self.cityDict:
-            df1 = df.loc[df['City'] == view].reset_index(drop=True)
+            df1 = df_stats.loc[df_stats['Stadt'] == view].reset_index(drop=True)
             df_max = max(df1['TotalParticipants'])
-            for k, d in df1.iterrows():
-                msize = d['TotalParticipants'] * 5
+            for group_cluster, data in df1.iterrows():
+                msize = data['TotalParticipants'] * 5
                 if msize > 200:
                     msize = 200
-                col = cm.gist_rainbow(d['TotalParticipants'] / df_max)
-                x, y = m(d['Longitude'], d['Latitude'])
-                ax.scatter(x, y, label=k, s=msize, color=col)
+                col = cm.winter(data['TotalParticipants'] / df_max)
+                x, y = m(data['Longitude'], data['Latitude'])
+                ax.scatter(x, y, label=group_cluster, s=msize, color=col)
+
+            # df1 = df_events.loc[df_events['Stadt'] == view].reset_index(drop=True)
+            # df_max = max(df1['TotalParticipants'])
+            # for k, d in df1.iterrows():
+            #     msize = d['TotalParticipants'] * 5
+            #     if msize > 200:
+            #         msize = 200
+            #     col = cm.winter(d['TotalParticipants'] / df_max)
+            #     x, y = m(d['Longitude'], d['Latitude'])
+            #     ax.scatter(x, y, label=k, s=msize, color=col)
         else:
             '''
             Draw the German States
@@ -623,8 +638,8 @@ class LectureMapApp(QMainWindow):
                 shape_array = np.array(shape)
                 df_poly.loc[len(df_poly.index) + 1] = [Polygon(shape_array), info['NAME_1']]
 
-            df1 = df.groupby('CityEventTotal')
-            colors = iter(cm.gnuplot(np.linspace(0, 1, len(df1.groups))))
+            df1 = df_stats.groupby('CityEventTotal')
+            colors = iter(cm.winter(np.linspace(1, 0, len(df1.groups))))
 
             for group_cluster, data in df1:
                 msize = group_cluster * 10
@@ -639,8 +654,9 @@ class LectureMapApp(QMainWindow):
 
 
     def drawInitialMap(self):
-        df_fresks = self.read_excel_file(self.excelFilePath)
-        self.plot_map(df_fresks,
+        df_events, df_stats = self.read_excel_file(self.excelFilePath)
+        self.plot_map(df_events,
+                      df_stats,
                  self.plotPath,
                  self.canvas,
                  self.germanyDict['Deutschland']['lat_0'],
@@ -673,7 +689,6 @@ class LectureMapApp(QMainWindow):
             df = df.fillna('')  # Replace NaN with empty string
             for index, row in df.iterrows():
                 date = row['Datum']
-                time = row['Uhrzeit']
                 name = row['Schul/Uni']
                 address = str(row['Adresse'])
                 city = str(row['Stadt'])
@@ -682,7 +697,7 @@ class LectureMapApp(QMainWindow):
                 table = str(row['Tische'])
                 participant = str(row['Teilnehmer'])
                 latitude, longitude = self.get_coordinates(address, city, state, plzCode)
-                self.update_excel(self.excelFilePath, name, address, city, state, plzCode, latitude, longitude, table, participant)
+                self.update_excel(self.excelFilePath, date, name, address, city, state, plzCode, latitude, longitude, table, participant)
             if os.path.exists(bulkFilePath):
                 os.remove(bulkFilePath)
             self.bulkImportList.takeItem(i)
@@ -927,7 +942,7 @@ class LectureMapApp(QMainWindow):
             msgBox.exec()
         else:
             latitude, longitude = self.get_coordinates(address, city, state, plzCode)
-            self.update_excel(self.excelFilePath, name, address, city, state, plzCode, latitude, longitude, tables, participants)
+            self.update_excel(self.excelFilePath, date, name, address, city, state, plzCode, latitude, longitude, tables, participants)
             msgBox = QMessageBox(self)
             msgBox.setIcon(QMessageBox.Icon.Information)
             msgBox.setWindowTitle("Input Successful!")
@@ -960,9 +975,9 @@ class LectureMapApp(QMainWindow):
             return list(self.cityDict.values())[radioButtonIndex], list(self.cityDict.keys())[radioButtonIndex]
 
     def onPlotButtonClicked(self):
-        df_fresks = self.read_excel_file(self.excelFilePath)
+        df_events, df_stats = self.read_excel_file(self.excelFilePath)
         plotItem, plotItemName = self.getPlotItem()
-        self.plot_map(df_fresks, self.plotPath, self.canvas, plotItem['lat_0'], plotItem['lon_0'], plotItem['llcrnrlat'],
+        self.plot_map(df_events, df_stats, self.plotPath, self.canvas, plotItem['lat_0'], plotItem['lon_0'], plotItem['llcrnrlat'],
                  plotItem['llcrnrlon'], plotItem['urcrnrlat'], plotItem['urcrnrlon'], plotItemName)
 
         # # Clear inputs
