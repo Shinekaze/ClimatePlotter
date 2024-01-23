@@ -31,500 +31,29 @@ class LectureMapApp(QMainWindow):
         self.viewsFilePath = os.path.join(os.path.dirname(__file__), 'Views.xlsx')
         self.plotPath = 'Plotter_Output'
 
-        self.radio_buttons = []
-
         self.setWindowTitle("Lecture Map Plotter")
         self.setGeometry(100, 100, 1200, 900)
 
         self.df_views = self.read_views_file(self.viewsFilePath)
 
-        self.germanyDict = {
-            'Deutschland': {
-                "lat_0": 51.1657,
-                "lon_0": 10.4515,
-                "llcrnrlon": 5.866,
-                "llcrnrlat": 47.2701,
-                "urcrnrlon": 15.0418,
-                "urcrnrlat": 55.0583
-            }
-        }
-
-        self.stateDict = {
-            'Baden-Württemberg': {
-                "lat_0": 48.6616,
-                "lon_0": 9.3501,
-                "llcrnrlon": 7.511,
-                "llcrnrlat": 47.533,
-                "urcrnrlon": 10.491,
-                "urcrnrlat": 49.791
-            },
-            'Bayern': {
-                "lat_0": 48.9463,
-                "lon_0": 11.4039,
-                "llcrnrlon": 8.979,
-                "llcrnrlat": 47.270,
-                "urcrnrlon": 13.839,
-                "urcrnrlat": 50.564
-            },
-            'Berlin': {
-                "lat_0": 52.5200,
-                "lon_0": 13.4050,
-                "llcrnrlon": 13.088,
-                "llcrnrlat": 52.338,
-                "urcrnrlon": 13.761,
-                "urcrnrlat": 52.675
-            },
-            'Brandenburg': {
-                "lat_0": 52.4084,
-                "lon_0": 12.5625,
-                "llcrnrlon": 11.267,
-                "llcrnrlat": 51.359,
-                "urcrnrlon": 14.765,
-                "urcrnrlat": 53.558
-            },
-            'Bremen': {
-                "lat_0": 53.0793,
-                "lon_0": 8.8017,
-                "llcrnrlon": 8.480,
-                "llcrnrlat": 53.01,
-                "urcrnrlon": 9.0,
-                "urcrnrlat": 53.24
-            },
-            'Hamburg': {
-                "lat_0": 53.5511,
-                "lon_0": 9.9937,
-                "llcrnrlon": 9.731,
-                "llcrnrlat": 53.395,
-                "urcrnrlon": 10.325,
-                "urcrnrlat": 53.75
-            },
-            'Hessen': {
-                "lat_0": 50.6521,
-                "lon_0": 9.1624,
-                "llcrnrlon": 7.773,
-                "llcrnrlat": 49.396,
-                "urcrnrlon": 10.238,
-                "urcrnrlat": 51.657
-            },
-            'Mecklenburg-Vorpommern': {
-                "lat_0": 53.6127,
-                "lon_0": 12.4296,
-                "llcrnrlon": 10.593,
-                "llcrnrlat": 53.10,
-                "urcrnrlon": 14.429,
-                "urcrnrlat": 54.684
-            },
-            'Niedersachsen': {
-                "lat_0": 52.6367,
-                "lon_0": 9.8451,
-                "llcrnrlon": 6.533,
-                "llcrnrlat": 51.295,
-                "urcrnrlon": 11.597,
-                "urcrnrlat": 54.167
-            },
-            'Nordrhein-Westfalen': {
-                "lat_0": 51.4332,
-                "lon_0": 7.6616,
-                "llcrnrlon": 5.866,
-                "llcrnrlat": 50.322,
-                "urcrnrlon": 9.461,
-                "urcrnrlat": 52.530
-            },
-            'Rheinland-Pfalz': {
-                "lat_0": 49.9825,
-                "lon_0": 7.3090,
-                "llcrnrlon": 6.013,
-                "llcrnrlat": 48.971,
-                "urcrnrlon": 8.52,
-                "urcrnrlat": 50.941
-            },
-            'Saarland': {
-                "lat_0": 49.3965,
-                "lon_0": 6.9783,
-                "llcrnrlon": 6.35,
-                "llcrnrlat": 49.112,
-                "urcrnrlon": 7.42,
-                "urcrnrlat": 49.656
-            },
-            'Sachsen': {
-                "lat_0": 51.1045,
-                "lon_0": 13.2017,
-                "llcrnrlon": 11.872,
-                "llcrnrlat": 50.175,
-                "urcrnrlon": 15.041,
-                "urcrnrlat": 51.649
-            },
-            'Sachsen-Anhalt': {
-                "lat_0": 51.9715,
-                "lon_0": 11.4697,
-                "llcrnrlon": 10.569,
-                "llcrnrlat": 50.951,
-                "urcrnrlon": 13.2,
-                "urcrnrlat": 53.055
-            },
-            'Schleswig-Holstein': {
-                "lat_0": 54.2194,
-                "lon_0": 9.6961,
-                "llcrnrlon": 8.120,
-                "llcrnrlat": 53.359,
-                "urcrnrlon": 11.43,
-                "urcrnrlat": 55.058
-            },
-            'Thüringen': {
-                "lat_0": 50.8614,
-                "lon_0": 11.0522,
-                "llcrnrlon": 9.872,
-                "llcrnrlat": 50.204,
-                "urcrnrlon": 12.652,
-                "urcrnrlat": 51.637
-            }
-        }
-
-        self.cityDict = {
-            'Berlin': {
-                "plz": [
-                    '10115', '10117', '10119', '10179', '10315', '10317', '10318', '10319', '10365', '10367', '10369',
-                    '10405',
-                    '10407', '10409', '10435', '10437', '10439', '10551', '10553', '10555', '10557', '10559', '10585',
-                    '10587',
-                    '10589', '10623', '10625', '10627', '10629', '10707', '10709', '10711', '10713', '10715', '10717',
-                    '10719',
-                    '10777', '10779', '10781', '10783', '10785', '10787', '10789', '10823', '10825', '10827', '10829',
-                    '12043',
-                    '12045', '12047', '12049', '12051', '12053', '12055', '12057', '12059', '12099', '12101', '12103',
-                    '12105',
-                    '12107', '12109', '12157', '12159', '12161', '12163', '12165', '12167', '12169', '12203', '12205',
-                    '12207',
-                    '12209', '12247', '12249', '12277', '12279', '12305', '12307', '12309', '12347', '12349', '12351',
-                    '12353',
-                    '12355', '12357', '12359', '12435', '12437', '12439', '12459', '12487', '12489', '12524', '12526',
-                    '12527',
-                    '12557', '12559', '12587', '12589', '12619', '12621', '12623', '12627', '12629', '12679', '12681',
-                    '12683',
-                    '12685', '12687', '12689', '13051', '13053', '13055', '13057', '13059', '13086', '13088', '13089',
-                    '13125',
-                    '13127', '13129', '13156', '13158', '13159', '13187', '13189', '13347', '13349', '13351', '13353',
-                    '13355',
-                    '13357', '13359', '13403', '13405', '13407', '13409', '13435', '13437', '13439', '13465', '13467',
-                    '13469',
-                    '13503', '13505', '13507', '13509', '13581', '13585', '13591', '13597', '13599', '13627', '13629',
-                    '14050',
-                    '14052', '14053', '14055', '14057', '14059', '14089', '14109', '14129', '14131', '14163', '14165',
-                    '14167',
-                    '14169', '14193', '14195', '14197', '14199'
-                ],
-                "lat_0": 52.532,
-                "lon_0": 13.3922,
-                "llcrnrlon": 13.1055859,
-                "llcrnrlat": 52.3932541,
-                "urcrnrlon": 13.6266696,
-                "urcrnrlat": 52.6131758
-            },
-            'Hamburg': {
-                "plz": [
-                    '20095', '20097', '20099', '20144', '20146', '20148', '20149', '20249', '20251', '20253', '20255',
-                    '20257',
-                    '20259', '20354', '20355', '20357', '20359', '20457', '20459', '20535', '20537', '20539', '21029',
-                    '21031',
-                    '21033', '21035', '21037', '21039', '21073', '21075', '21077', '21079', '21107', '21109', '21129',
-                    '21147',
-                    '21149', '22041', '22043', '22045', '22047', '22049', '22081', '22083', '22085', '22087', '22089',
-                    '22111',
-                    '22113', '22115', '22117', '22119', '22143', '22145', '22147', '22149', '22159', '22175', '22177',
-                    '22179',
-                    '22297', '22299', '22301', '22303', '22305', '22307', '22309', '22335', '22337', '22339', '22359',
-                    '22391',
-                    '22393', '22395', '22397', '22399', '22415', '22417', '22419', '22453', '22455', '22457', '22459',
-                    '22523',
-                    '22525', '22527', '22529', '22547', '22549', '22559', '22587', '22589', '22605', '22607', '22609',
-                    '22761',
-                    '22763', '22765', '22767', '22769'
-                ],
-                "lat_0": 53.5544,
-                "lon_0": 9.9946,
-                "llcrnrlon": 9.8073217,
-                "llcrnrlat": 53.4457532,
-                "urcrnrlon": 10.2137762,
-                "urcrnrlat": 53.6817768
-            },
-            'München': {
-                "plz": [
-                    '80331', '80333', '80335', '80336', '80337', '80339', '80469', '80538', '80539', '80634', '80636',
-                    '80637',
-                    '80638', '80639', '80686', '80687', '80689', '80796', '80797', '80798', '80799', '80801', '80802',
-                    '80803',
-                    '80804', '80805', '80807', '80809', '80933', '80935', '80937', '80939', '80992', '80993', '80995',
-                    '80997',
-                    '80999', '81241', '81243', '81245', '81247', '81369', '81371', '81373', '81375', '81377', '81379',
-                    '81475',
-                    '81476', '81477', '81479', '81539', '81541', '81543', '81545', '81547', '81549', '81667', '81669',
-                    '81671',
-                    '81673', '81675', '81677', '81679', '81735', '81737', '81739', '81825', '81827', '81829', '81925',
-                    '81927',
-                    '81929'
-                ],
-                "lat_0": 48.1351,
-                "lon_0": 11.5820,
-                "llcrnrlon": 11.360,
-                "llcrnrlat": 48.061,
-                "urcrnrlon": 11.722,
-                "urcrnrlat": 48.248
-            },
-            'Köln': {
-                "plz": [
-                    '50667', '50668', '50670', '50672', '50674', '50676', '50677', '50678', '50679', '50733', '50735',
-                    '50737',
-                    '50739', '50765', '50767', '50769', '50823', '50825', '50827', '50829', '50858', '50859', '50931',
-                    '50933',
-                    '50935', '50937', '50939', '50968', '50969', '50996', '50997', '50999', '51061', '51063', '51065',
-                    '51067',
-                    '51069', '51103', '51105', '51107', '51109', '51143', '51145', '51147', '51149', '51467'
-                ],
-                "lat_0": 50.9384,
-                "lon_0": 6.9543,
-                "llcrnrlon": 6.8824458,
-                "llcrnrlat": 50.8910803,
-                "urcrnrlon": 7.0653033,
-                "urcrnrlat": 51.0145577
-            },
-            'Frankfurt': {
-                "plz": [
-                    '60308', '60311', '60313', '60314', '60316', '60318', '60320', '60322', '60323', '60325', '60326',
-                    '60327',
-                    '60329', '60385', '60386', '60388', '60389', '60431', '60433', '60435', '60437', '60438', '60439',
-                    '60486',
-                    '60487', '60488', '60489', '60528', '60529', '60549', '60594', '60596', '60598', '60599', '65929',
-                    '65931',
-                    '65933', '65934', '65936'
-                ],
-                "lat_0": 50.1167,
-                "lon_0": 8.6833,
-                "llcrnrlon": 8.4888008,
-                "llcrnrlat": 50.0133053,
-                "urcrnrlon": 8.7834831,
-                "urcrnrlat": 50.2164379
-            },
-            'Stuttgart': {
-                "plz": [
-                    '70173', '70174', '70176', '70178', '70180', '70182', '70184', '70186', '70188', '70190', '70191',
-                    '70192',
-                    '70193', '70195', '70197', '70199', '70327', '70329', '70372', '70374', '70376', '70378', '70435',
-                    '70437',
-                    '70439', '70469', '70499', '70563', '70565', '70567', '70569', '70597', '70599', '70619', '70629'
-                ],
-                "lat_0": 48.7667,
-                "lon_0": 9.1833,
-                "llcrnrlon": 9.1343004,
-                "llcrnrlat": 48.7545509,
-                "urcrnrlon": 9.2414900,
-                "urcrnrlat": 48.8204811
-            },
-            'Düsseldorf': {
-                "plz": [
-                    '40210', '40211', '40212', '40213', '40215', '40217', '40219', '40221', '40223', '40225', '40227',
-                    '40229',
-                    '40231', '40233', '40235', '40237', '40239', '40468', '40470', '40472', '40474', '40476', '40477',
-                    '40479',
-                    '40489', '40545', '40547', '40549', '40589', '40591', '40593', '40595', '40597', '40599', '40625',
-                    '40627',
-                    '40629'
-                ],
-                "lat_0": 51.2216,
-                "lon_0": 6.7898,
-                "llcrnrlon": 6.6985260,
-                "llcrnrlat": 51.1237393,
-                "urcrnrlon": 6.9201588,
-                "urcrnrlat": 51.3401162
-            },
-            'Dortmund': {
-                "plz": [
-                    '44135', '44137', '44139', '44141', '44143', '44145', '44147', '44149', '44225', '44227', '44229',
-                    '44263',
-                    '44265', '44267', '44269', '44287', '44289', '44309', '44319', '44328', '44329', '44339', '44357',
-                    '44359',
-                    '44369', '44379', '44388'
-                ],
-                "lat_0": 51.5125,
-                "lon_0": 7.477,
-                "llcrnrlon": 7.3189002,
-                "llcrnrlat": 51.4203522,
-                "urcrnrlon": 7.6285024,
-                "urcrnrlat": 51.5902729
-            },
-            'Essen': {
-                "plz": [
-                    '45127', '45128', '45130', '45131', '45133', '45134', '45136', '45138', '45139', '45141', '45143',
-                    '45144',
-                    '45145', '45147', '45149', '45219', '45239', '45257', '45259', '45276', '45277', '45279', '45289',
-                    '45307',
-                    '45309', '45326', '45327', '45329', '45355', '45356', '45357', '45359'
-                ],
-                "lat_0": 51.4536,
-                "lon_0": 7.0102,
-                "llcrnrlon": 6.9009234,
-                "llcrnrlat": 51.3477941,
-                "urcrnrlon": 7.1307693,
-                "urcrnrlat": 51.5340233
-            },
-            'Leipzig': {
-                "plz": [
-                    '04109'
-                ],
-                "lat_0": 51.342,
-                "lon_0": 12.375,
-                "llcrnrlon": 12.2465782,
-                "llcrnrlat": 51.2638967,
-                "urcrnrlon": 12.5297905,
-                "urcrnrlat": 51.4002769
-            },
-            'Bremen': {
-                "plz": [
-                    '28195', '28197', '28199', '28201', '28203', '28205', '28207', '28209', '28211', '28213', '28215',
-                    '28217',
-                    '28219', '28237', '28239', '28259', '28277', '28279', '28307', '28309', '28325', '28327', '28329',
-                    '28355',
-                    '28357', '28359', '28717', '28719', '28755', '28757', '28759', '28777', '28779'
-                ],
-                "lat_0": 53.0889,
-                "lon_0": 8.7906,
-                "llcrnrlon": 8.4947922,
-                "llcrnrlat": 53.0221694,
-                "urcrnrlon": 8.9870293,
-                "urcrnrlat": 53.2204517
-            },
-            'Dresden': {
-                "plz": [
-                    '01067', '01069', '01097', '01099', '01108', '01109', '01127', '01129', '01139', '01156', '01157',
-                    '01159',
-                    '01169', '01187', '01189', '01217', '01219', '01237', '01239', '01257', '01259', '01277', '01279',
-                    '01307',
-                    '01309', '01324', '01326', '01328', '01462', '01465', '01478'
-                ],
-                "lat_0": 51.05,
-                "lon_0": 13.75,
-                "llcrnrlon": 13.5754990,
-                "llcrnrlat": 50.9758015,
-                "urcrnrlon": 13.9326637,
-                "urcrnrlat": 51.1658162
-            },
-            'Hanover': {
-                "plz": [
-                    '30159', '30161', '30163', '30165', '30167', '30169', '30171', '30173', '30175', '30177', '30179',
-                    '30419',
-                    '30449', '30451', '30453', '30455', '30457', '30459', '30519', '30521', '30539', '30559', '30625',
-                    '30627',
-                    '30629', '30655', '30657', '30659', '30669'
-                ],
-                "lat_0": 52.3736,
-                "lon_0": 9.7371,
-                "llcrnrlon": 9.6256456,
-                "llcrnrlat": 52.3076533,
-                "urcrnrlon": 9.9171856,
-                "urcrnrlat": 52.4484497
-            },
-            'Nürnberg': {
-                "plz": [
-                    '90402', '90403', '90408', '90409', '90411', '90419', '90425', '90427', '90429', '90431', '90439',
-                    '90441',
-                    '90443', '90449', '90451', '90453', '90455', '90459', '90461', '90469', '90471', '90473', '90475',
-                    '90478',
-                    '90480', '90482', '90489', '90491'
-                ],
-                "lat_0": 49.4504,
-                "lon_0": 11.0778,
-                "llcrnrlon": 10.9940730,
-                "llcrnrlat": 49.3428032,
-                "urcrnrlon": 11.1882136,
-                "urcrnrlat": 49.5367797
-            },
-            'Duisberg': {
-                "plz": [
-                    '47198'
-                ],
-                "lat_0": 51.4499,
-                "lon_0": 6.6901,
-                "llcrnrlon": 6.6300531,
-                "llcrnrlat": 51.3300235,
-                "urcrnrlon": 6.8401972,
-                "urcrnrlat": 51.5621746
-            },
-            'Bochum': {
-                "plz": [
-                    '44787', '44789', '44791', '44793', '44795', '44797', '44799', '44801', '44803', '44805', '44807',
-                    '44809',
-                    '44866', '44867', '44869', '44879', '44892', '44894'
-                ],
-                "lat_0": 51.4803,
-                "lon_0": 7.2183,
-                "llcrnrlon": 7.1182351,
-                "llcrnrlat": 51.4062166,
-                "urcrnrlon": 7.3439578,
-                "urcrnrlat": 51.5315915
-            },
-            'Wuppertal': {
-                "plz": [
-                    '42103', '42105', '42107', '42109', '42111', '42113', '42115', '42117', '42119', '42275', '42277',
-                    '42279',
-                    '42281', '42283', '42285', '42287', '42289', '42327', '42329', '42349', '42369', '42389', '42399'
-                ],
-                "lat_0": 51.2569,
-                "lon_0": 7.1505,
-                "llcrnrlon": 7.0911096,
-                "llcrnrlat": 51.2202031,
-                "urcrnrlon": 7.2393535,
-                "urcrnrlat": 51.2977357
-            },
-            'Bielefeld': {
-                "plz": [
-                    '33602', '33604', '33605', '33607', '33609', '33611', '33613', '33615', '33617', '33619', '33647',
-                    '33649',
-                    '33659', '33689', '33699', '33719', '33729', '33739'
-                ],
-                "lat_0": 52.0245,
-                "lon_0": 8.5326,
-                "llcrnrlon": 8.4680291,
-                "llcrnrlat": 51.9735205,
-                "urcrnrlon": 8.6149822,
-                "urcrnrlat": 52.0601791
-            },
-            'Bonn': {
-                "plz": [
-                    '53111', '53113', '53115', '53117', '53119', '53121', '53123', '53125', '53127', '53129', '53173',
-                    '53175',
-                    '53177', '53179', '53225', '53227', '53229'
-                ],
-                "lat_0": 50.7362,
-                "lon_0": 7.1002,
-                "llcrnrlon": 7.0315679,
-                "llcrnrlat": 50.6815715,
-                "urcrnrlon": 7.1774806,
-                "urcrnrlat": 50.7640391
-            },
-            'Münster': {
-                "plz": [
-                    48079
-                ],
-                "lat_0": 51.9625,
-                "lon_0": 7.6256,
-                "llcrnrlon": 7.480,
-                "llcrnrlat": 51.892,
-                "urcrnrlon": 7.770,
-                "urcrnrlat": 52.042
-            },
-            'Karlsruhe': {
-                "plz": [
-                    '76131', '76133', '76135', '76137', '76139', '76149', '76185', '76187', '76189', '76199', '76227',
-                    '76228',
-                    '76229'
-                ],
-                "lat_0": 49.0069,
-                "lon_0": 8.4037,
-                "llcrnrlon": 8.282,
-                "llcrnrlat": 48.935,
-                "urcrnrlon": 8.524,
-                "urcrnrlat": 49.073
-            }
-        }
+        self.stateList = [
+            'Baden-Württemberg',
+            'Bayern',
+            'Berlin',
+            'Brandenburg',
+            'Bremen',
+            'Hamburg',
+            'Hessen',
+            'Mecklenburg-Vorpommern',
+            'Niedersachsen',
+            'Nordrhein-Westfalen',
+            'Rheinland-Pfalz',
+            'Saarland',
+            'Sachsen',
+            'Sachsen-Anhalt',
+            'Schleswig-Holstein',
+            'Thüringen'
+        ]
 
         self.initUI()
 
@@ -554,26 +83,26 @@ class LectureMapApp(QMainWindow):
             else:
                 if 'Events' not in xl.sheet_names:
                     df_events = pd.DataFrame(
-                        columns=['Datum', 'Schul/Uni Name', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
+                        columns=['Datum', 'Schul/Uni Name', 'Adresse', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
                     df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
                                                      'EventCount', 'CityEventTotal', 'TotalTables',
-                                                     'TotalParticipants'])
+                                                     'TotalParticipants', 'CityParticipantsTotal'])
                     msgText = "Events sheet not found, Stats reset"
                 elif 'Stats' not in xl.sheet_names:
                     df_events = xl.parse('Events')
                     df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
                                                      'EventCount', 'CityEventTotal', 'TotalTables',
-                                                     'TotalParticipants'])
+                                                     'TotalParticipants', 'CityParticipantsTotal'])
                     msgText = "Stats sheet not found, created new from values in Events sheet"
-                self.recalculateStatistics(df_events, df_stats)
+                    self.recalculateStatistics(df_events, df_stats)
                 self.create_msg_box("Sheet Not Found", msgText, 'warning')
             return df_events, df_stats
         except FileNotFoundError:
             df_events = pd.DataFrame(
-                columns=['Datum', 'Schul/Uni Name', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
+                columns=['Datum', 'Schul/Uni Name', 'Adresse', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
             df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
                                              'EventCount', 'CityEventTotal', 'TotalTables',
-                                             'TotalParticipants'])
+                                             'TotalParticipants', 'CityParticipantsTotal'])
             with pd.ExcelWriter(self.excelFilePath) as writer:
                 df_events.to_excel(writer, sheet_name='Events', index=False)
                 df_stats.to_excel(writer, sheet_name='Stats', index=False)
@@ -585,13 +114,19 @@ class LectureMapApp(QMainWindow):
     def update_excel(self, file_path, date, name, address, city, state, plz, lat, lon, tables=0,
                      participants=0):
         df_events, df_stats = self.read_excel_file(file_path)
-        df_events.loc[len(df_events.index) + 1] = [date, name, address, city, state, str(plz), int(tables),
-                                                   int(participants)]
-        successFlag = self.recalculateStatistics(df_events, df_stats, lat, lon)
-        return successFlag
+        df_events.loc[len(df_events.index) + 1] = [date, name, address, city, state, str(plz), int(tables), int(participants)]
+        # successFlag = self.recalculateStatistics(df_events, df_stats, lat, lon)
+        # return successFlag
+        try:
+            with pd.ExcelWriter(self.excelFilePath) as writer:
+                df_events.to_excel(writer, sheet_name='Events', index=False)
+                df_stats.to_excel(writer, sheet_name='Stats', index=False)
+            return True
+        except OSError:
+            return False
 
     def plot_map(self, df_events, df_stats, save_path, canvas, lat, lon, llc_lat, llc_lon, urc_lat, urc_lon,
-                 view='Deutschland'):
+                 view='Deutschland', doSave=False):
         canvas.figure.clf()
         ax = canvas.figure.add_subplot(111)
         '''
@@ -599,7 +134,7 @@ class LectureMapApp(QMainWindow):
         projection: 'merc' (Mercator), 'cyl' (Cylindrical Equidistant), 'mill' (Miller Cylindrical), 'gall' (Gall Stereographic Cylindrical), 'cea' (Cylindrical Equal Area), 'lcc' (Lambert Conformal), 'tmerc' (Transverse Mercator), 'omerc' (Oblique Mercator), 'nplaea' (North-Polar Lambert Azimuthal), 'npaeqd' (North-Polar Azimuthal Equidistant), 'nplaea' (South-Polar Lambert Azimuthal), 'spaeqd' (South-Polar Azimuthal Equidistant), 'aea' (Albers Equal Area), 'stere' (Stereographic), 'robin' (Robinson), 'eck4' (Eckert IV), 'eck6' (Eckert VI), 'kav7' (Kavrayskiy VII), 'mbtfpq' (McBryde-Thomas Flat-Polar Quartic), 'sinu' (Sinusoidal), 'gall' (Gall Stereographic Cylindrical), 'hammer' (Hammer), 'moll' (Mollweid
         espg: 3857 (Web Mercator)
         '''
-        m = Basemap(resolution='h', lat_0=lat, lon_0=lon, llcrnrlon=llc_lon, llcrnrlat=llc_lat,
+        m = Basemap(resolution='h', lat_0=(urc_lat - llc_lat)/2, lon_0=(urc_lon - llc_lon)/2, llcrnrlon=llc_lon, llcrnrlat=llc_lat,
                     urcrnrlon=urc_lon, urcrnrlat=urc_lat, epsg=3857)
         m.drawcountries()
 
@@ -613,22 +148,12 @@ class LectureMapApp(QMainWindow):
         web_light_grau
         '''
         wms_server = 'https://sgx.geodatenzentrum.de/wms_topplus_open?request=GetCapabilities&service=wms'
-        m.wmsimage(wms_server, layers=["web"], verbose=True)
+        m.wmsimage(wms_server, layers=["web_light"], verbose=False)
 
         m.drawcoastlines()
-        if view in self.cityDict:
-            df1 = df_stats.loc[df_stats['Stadt'] == view].reset_index(drop=True)
-            df_max = max(df1['TotalParticipants'])
-            for group_cluster, data in df1.iterrows():
-                msize = data['TotalParticipants'] * 5
-                if msize > 200:
-                    msize = 200
-                col = cm.winter(data['TotalParticipants'] / df_max)
-                x, y = m(data['Longitude'], data['Latitude'])
-                ax.scatter(x, y, label=group_cluster, s=msize, color=col)
-        else:
+        if view == 'Deutschland' or view in self.stateList:
             '''
-            Draw the German States
+            Handle drawing Germany or the states
             '''
             shapePath = os.path.join(os.path.dirname(__file__), 'shapefiles', 'DEU_adm1')
             m.readshapefile(shapePath, 'areas')
@@ -637,19 +162,34 @@ class LectureMapApp(QMainWindow):
                 shape_array = np.array(shape)
                 df_poly.loc[len(df_poly.index) + 1] = [Polygon(shape_array), info['NAME_1']]
 
-            df1 = df_stats.groupby('CityEventTotal')
+            df1 = df_stats.groupby('CityParticipantsTotal')
             colors = iter(cm.winter(np.linspace(1, 0, len(df1.groups))))
 
             for group_cluster, data in df1:
-                msize = group_cluster * 10
-                if msize > 50:
-                    msize = 50
+                msize = group_cluster * 5
+                if msize > 100:
+                    msize = 100
                 x, y = m(data['Longitude'], data['Latitude'])
-                ax.scatter(x, y, label=group_cluster, s=msize, color=next(colors))
-        save_path = os.path.join(os.path.dirname(__file__), save_path,
-                                 f'{pd.Timestamp.now().strftime("%Y-%m-%d_H%HM%MS%S")}_{view}.png')
-        plt.savefig(save_path, format='png', dpi=300)
+                ax.scatter(x, y, label=group_cluster, marker='*', s=msize, color=next(colors))
+        else:
+            '''
+            Handle drawing the cities
+            '''
+            df1 = df_stats.loc[df_stats['Stadt'] == view].reset_index(drop=True)
+            df_max = max(df1['TotalParticipants'])
+            for group_cluster, data in df1.iterrows():
+                msize = data['TotalParticipants'] * 5
+                if msize > 200:
+                    msize = 200
+                col = cm.winter(data['TotalParticipants'] / df_max)
+                x, y = m(data['Longitude'], data['Latitude'])
+                ax.scatter(x, y, label=group_cluster, marker='*', s=msize, color=col)
         canvas.draw()
+        if doSave:
+            save_path = os.path.join(os.path.dirname(__file__), save_path,
+                                     f'{pd.Timestamp.now().strftime("%Y-%m-%d_H%HM%MS%S")}_{view}.png')
+            plt.savefig(save_path, format='png', dpi=300)
+
 
     def drawInitialMap(self):
         df_events, df_stats = self.read_excel_file(self.excelFilePath)
@@ -664,17 +204,6 @@ class LectureMapApp(QMainWindow):
                       self.df_views.loc[self.df_views['View'] == 'Deutschland']['urcrnrlat'],
                       self.df_views.loc[self.df_views['View'] == 'Deutschland']['urcrnrlon']
                       )
-        # self.plot_map(df_events,
-        #               df_stats,
-        #               self.plotPath,
-        #               self.canvas,
-        #               self.germanyDict['Deutschland']['lat_0'],
-        #               self.germanyDict['Deutschland']['lon_0'],
-        #               self.germanyDict['Deutschland']['llcrnrlat'],
-        #               self.germanyDict['Deutschland']['llcrnrlon'],
-        #               self.germanyDict['Deutschland']['urcrnrlat'],
-        #               self.germanyDict['Deutschland']['urcrnrlon']
-        #               )
 
     def read_views_file(self, file_path):
         return pd.read_excel(file_path)
@@ -712,11 +241,14 @@ class LectureMapApp(QMainWindow):
                 table = str(row['Tische'])
                 participant = str(row['Teilnehmer'])
                 latitude, longitude = self.get_coordinates(address, city, state, plzCode)
+                time.sleep(0.25)  # rate limit to max 4 requests per second
                 self.update_excel(self.excelFilePath, date, name, address, city, state, plzCode, latitude, longitude,
                                   table, participant)
             if os.path.exists(bulkFilePath):
                 os.remove(bulkFilePath)
             self.bulkImportList.takeItem(i)
+        df_events, df_stats = self.read_excel_file(self.excelFilePath)
+        self.recalculateStatistics(df_events, df_stats)
         self.drawInitialMap()
 
     def onLookupAddressButtonClicked(self):
@@ -731,11 +263,10 @@ class LectureMapApp(QMainWindow):
         except AttributeError:
             self.create_msg_box("Address Not Found", "Address not found. Please try again.", 'warning')
             return
-        i = -1
-        for item in self.stateDict:
-            i += 1
-            if state == item:
-                self.stateCombo.setCurrentIndex(i)
+
+        # find the state in the state list and set the combo box to that index
+        self.stateCombo.setCurrentIndex(self.stateList.index(state))
+
         substring_list = ['straße',
                           'platz',
                           'weg',
@@ -806,23 +337,17 @@ class LectureMapApp(QMainWindow):
             return
         elif button == QMessageBox.StandardButton.Yes:
             df_events, df_stats = self.read_excel_file(self.excelFilePath)
-            df_stats = pd.DataFrame(columns=[
-                'Schul/Uni Name',
-                'Stadt',
-                'PLZ',
-                'Latitude',
-                'Longitude',
-                'EventCount',
-                'CityEventTotal',
-                'TotalTables',
-                'TotalParticipants'
-            ]
-            )
+            df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                                             'EventCount', 'CityEventTotal', 'TotalTables',
+                                             'TotalParticipants', 'CityParticipantsTotal'])
             self.recalculateStatistics(df_events, df_stats)
             self.create_msg_box("Complete", "Recalculation Complete")
             return
 
     def recalculateStatistics(self, df_events, df_stats, lat=None, lon=None):
+        df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                                         'EventCount', 'CityEventTotal', 'TotalTables',
+                                         'TotalParticipants', 'CityParticipantsTotal'])
         for index, row in df_events.iterrows():
             name = row['Schul/Uni Name']
             address = row['Adresse']
@@ -845,9 +370,13 @@ class LectureMapApp(QMainWindow):
                     lat, lon = self.get_coordinates(address, city, state, plz)
                     time.sleep(0.25)  # rate limit to max 4 requests per second
                 df_stats.loc[len(df_stats.index) + 1] = [name, city, plz, lat, lon, 1, -1, int(tables),
-                                                         int(participants)]
+                                                         int(participants), -1]
+                lat = None
+                lon = None
             city_event_total = df_stats[df_stats['Stadt'] == city]['EventCount'].sum()
             df_stats.loc[df_stats['Stadt'] == city, 'CityEventTotal'] = int(city_event_total)
+            city_participants_total = df_stats[df_stats['Stadt'] == city]['TotalParticipants'].sum()
+            df_stats.loc[df_stats['Stadt'] == city, 'CityParticipantsTotal'] = int(city_participants_total)
         try:
             with pd.ExcelWriter(self.excelFilePath) as writer:
                 df_events.to_excel(writer, sheet_name='Events', index=False)
@@ -857,13 +386,6 @@ class LectureMapApp(QMainWindow):
             return False
 
     def onArchiveButtonClicked(self):
-        # df_germany = pd.DataFrame.from_dict(self.germanyDict, orient='index')
-        # df_bundesland = pd.DataFrame.from_dict(self.stateDict, orient='index')
-        # df_cities = pd.DataFrame.from_dict(self.cityDict, orient='index').drop(columns=['plz'])
-        #
-        # df_concat = pd.concat([df_germany, df_bundesland, df_cities])
-        # df_concat.index.name = 'View'
-        # df_concat.to_excel('./Views.xlsx')
 
         msgBox = QMessageBox(self)
         msgBox.setIcon(QMessageBox.Icon.Warning)
@@ -891,35 +413,28 @@ class LectureMapApp(QMainWindow):
 
 
     def archive_and_clear(self):
-        print("archive and clear")
         try:
-            print("try")
             self.archiveExcel()
             df_events = pd.DataFrame(
-                columns=['Datum', 'Schul/Uni Name', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
+                columns=['Datum', 'Schul/Uni Name', 'Adresse', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
             df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
                                              'EventCount', 'CityEventTotal', 'TotalTables',
-                                             'TotalParticipants'])
+                                             'TotalParticipants', 'CityParticipantsTotal'])
             with pd.ExcelWriter(self.excelFilePath) as writer:
                 df_events.to_excel(writer, sheet_name='Events', index=False)
                 df_stats.to_excel(writer, sheet_name='Stats', index=False)
         except OSError:
-            print("except")
             self.create_msg_box("Error", "Error in archiving data")
         return
 
     def archive_and_keep(self):
-        print("archive and keep")
         self.archiveExcel()
         return
 
     def archiveExcel(self):
-        print("archive excel")
         date = pd.Timestamp.now().strftime("%Y-%m-%d_H%HM%MS%S")
         folder_path = os.path.join(os.path.dirname(__file__), 'Plotter_Output', 'Archive')
-        print(folder_path)
         if not os.path.exists(folder_path):
-            print("folder doesn't exist")
             os.makedirs(folder_path)
         shutil.copy(
             self.excelFilePath,
@@ -943,10 +458,8 @@ class LectureMapApp(QMainWindow):
         # Layout
         mylayout = QHBoxLayout()
         leftBox = QGridLayout()
-        BulkImportBox = QGridLayout()
-        InputBox = QGridLayout()
         middleBox = QVBoxLayout()
-        rightBox = QVBoxLayout()
+        rightBox = QGridLayout()
 
         '''
         BulkButtonBox
@@ -959,14 +472,17 @@ class LectureMapApp(QMainWindow):
         BulkImportBox
         '''
         self.bulkImportList = QListWidget(self)
+        bulkImportGroupBox = QGroupBox("Bulk Import", self)
+        BulkImportBoxLayout = QGridLayout()
+        bulkImportGroupBox.setLayout(BulkImportBoxLayout)
 
         self.bulkImportButton = QPushButton("Bulk Import", self)
 
-        BulkImportBox.addWidget(self.bulkImportList, 0, 0, 3, 1)
-        BulkImportBox.addWidget(self.addButton, 0, 1)
-        BulkImportBox.addWidget(self.removeButton, 1, 1)
-        BulkImportBox.addWidget(self.clearButton, 2, 1)
-        BulkImportBox.addWidget(self.bulkImportButton, 3, 0, 1, 2)
+        BulkImportBoxLayout.addWidget(self.bulkImportList, 0, 0, 3, 1)
+        BulkImportBoxLayout.addWidget(self.addButton, 0, 1)
+        BulkImportBoxLayout.addWidget(self.removeButton, 1, 1)
+        BulkImportBoxLayout.addWidget(self.clearButton, 2, 1)
+        BulkImportBoxLayout.addWidget(self.bulkImportButton, 3, 0, 1, 2)
 
         self.addButton.clicked.connect(self.addExcelFiles)
         self.removeButton.clicked.connect(self.removeExcelFiles)
@@ -994,7 +510,7 @@ class LectureMapApp(QMainWindow):
 
         self.stateLabel = QLabel("State:", self)
         self.stateCombo = QComboBox()
-        for state in self.stateDict:
+        for state in self.stateList:
             self.stateCombo.addItem(state)
 
         self.dateLabel = QLabel("Date (dd.MM.yyyy):", self)
@@ -1020,7 +536,7 @@ class LectureMapApp(QMainWindow):
         self.updateCsvButton.clicked.connect(self.onUpdateCsvButtonClicked)
 
         self.plotButton = QPushButton("Update Plot", self)
-        self.plotButton.clicked.connect(self.onPlotButtonClicked)
+        self.plotButton.clicked.connect(lambda: self.onPlotButtonClicked(doSave=True))
 
         self.clearAllButton = QPushButton("Clear All", self)
         self.clearAllButton.clicked.connect(self.clearAll)
@@ -1031,28 +547,36 @@ class LectureMapApp(QMainWindow):
         self.archiveButton = QPushButton("Archive Xlsx", self)
         self.archiveButton.clicked.connect(self.onArchiveButtonClicked)
 
-        InputBox.addWidget(self.nameLabel, 0, 0)
-        InputBox.addWidget(self.nameEdit, 0, 1)
-        InputBox.addWidget(self.addressLookupButton, 1, 0, 1, 2)
-        InputBox.addWidget(self.addressLabel, 2, 0)
-        InputBox.addWidget(self.addressEdit, 2, 1)
-        InputBox.addWidget(self.cityLabel, 3, 0)
-        InputBox.addWidget(self.cityEdit, 3, 1)
-        InputBox.addWidget(self.plzLabel, 4, 0)
-        InputBox.addWidget(self.plzEdit, 4, 1)
-        InputBox.addWidget(self.stateLabel, 5, 0)
-        InputBox.addWidget(self.stateCombo, 5, 1)
-        InputBox.addWidget(self.dateLabel, 6, 0)
-        InputBox.addWidget(self.dateEdit, 6, 1)
-        InputBox.addWidget(self.tableLabel, 7, 0)
-        InputBox.addWidget(self.tableEdit, 7, 1)
-        InputBox.addWidget(self.participantLabel, 8, 0)
-        InputBox.addWidget(self.participantEdit, 8, 1)
-        InputBox.addWidget(self.updateCsvButton, 9, 0)
-        InputBox.addWidget(self.plotButton, 9, 1)
-        InputBox.addWidget(self.clearAllButton, 10, 0, 1, 2)
-        InputBox.addWidget(self.recalculateButton, 11, 0, 1, 2)
-        InputBox.addWidget(self.archiveButton, 12, 0, 1, 2)
+        InputBoxGroupBox = QGroupBox("Manual Input", self)
+        InputBoxLayout = QGridLayout()
+        InputBoxGroupBox.setLayout(InputBoxLayout)
+
+        InputBoxLayout.addWidget(self.nameLabel, 0, 0)
+        InputBoxLayout.addWidget(self.nameEdit, 0, 1)
+        InputBoxLayout.addWidget(self.addressLookupButton, 1, 0, 1, 2)
+        InputBoxLayout.addWidget(self.addressLabel, 2, 0)
+        InputBoxLayout.addWidget(self.addressEdit, 2, 1)
+        InputBoxLayout.addWidget(self.cityLabel, 3, 0)
+        InputBoxLayout.addWidget(self.cityEdit, 3, 1)
+        InputBoxLayout.addWidget(self.plzLabel, 4, 0)
+        InputBoxLayout.addWidget(self.plzEdit, 4, 1)
+        InputBoxLayout.addWidget(self.stateLabel, 5, 0)
+        InputBoxLayout.addWidget(self.stateCombo, 5, 1)
+        InputBoxLayout.addWidget(self.dateLabel, 6, 0)
+        InputBoxLayout.addWidget(self.dateEdit, 6, 1)
+        InputBoxLayout.addWidget(self.tableLabel, 7, 0)
+        InputBoxLayout.addWidget(self.tableEdit, 7, 1)
+        InputBoxLayout.addWidget(self.participantLabel, 8, 0)
+        InputBoxLayout.addWidget(self.participantEdit, 8, 1)
+        InputBoxLayout.addWidget(self.updateCsvButton, 9, 0)
+        InputBoxLayout.addWidget(self.plotButton, 9, 1)
+        InputBoxLayout.addWidget(self.clearAllButton, 10, 0, 1, 2)
+
+        FileControlGroupBox = QGroupBox("File Control", self)
+        FileControlBoxLayout = QVBoxLayout()
+        FileControlGroupBox.setLayout(FileControlBoxLayout)
+        FileControlBoxLayout.addWidget(self.recalculateButton)
+        FileControlBoxLayout.addWidget(self.archiveButton)
 
         '''
         middleBox
@@ -1064,38 +588,92 @@ class LectureMapApp(QMainWindow):
         '''
         rightBox
         '''
-        for index, view in self.df_views.iterrows():
-            radioButton = QRadioButton(view['View'], self)
-            rightBox.addWidget(radioButton)
-            self.radio_buttons.append(radioButton)
-            if view['View'] == 'Deutschland' or index == 16:
-                rightBox.addWidget(QFrame(self, frameShape=QFrame.Shape.HLine))
+        self.plotListWidget = QListWidget(self)
+        self.setupPlotListWidget()
+        self.plotListWidget.clicked.connect(self.onplotListWidgetClicked)
 
-        # print(self.df_views.loc[self.df_views['View'] == 'Deutschland']['lat_0'])
+        viewInputBox = QGridLayout()
 
-        # for country in self.germanyDict:
-        #     radioButton = QRadioButton(country, self)
-        #     rightBox.addWidget(radioButton)
-        #     self.radio_buttons.append(radioButton)
-        # radioButton.setChecked(True)
-        #
-        # rightBox.addWidget(QFrame(self, frameShape=QFrame.Shape.HLine))
-        #
-        # for state in self.stateDict:
-        #     radioButton = QRadioButton(state, self)
-        #     rightBox.addWidget(radioButton)
-        #     self.radio_buttons.append(radioButton)
-        #
-        # rightBox.addWidget(QFrame(self, frameShape=QFrame.Shape.HLine))
-        #
-        # for city in self.cityDict:
-        #     radioButton = QRadioButton(city, self)
-        #     rightBox.addWidget(radioButton)
-        #     self.radio_buttons.append(radioButton)
+        viewInputGroupBox = QGroupBox("Manual View Input", self)
+        viewInputBoxLayout = QGridLayout()
+        viewInputGroupBox.setLayout(viewInputBoxLayout)
+        self.viewNameLabel = QLabel("View Name:", self)
+        self.viewName = QLineEdit(self)
+        self.viewLatLabel = QLabel("Central Latitude:", self)
+        self.viewLat = QLineEdit(self)
+        self.viewLonLabel = QLabel("Central Longitude:", self)
+        self.viewLon = QLineEdit(self)
+        self.viewLLCLatLabel = QLabel("Lower Left Corner Latitude:", self)
+        self.viewLLCLat = QLineEdit(self)
+        self.viewLLCLonLabel = QLabel("Lower Left Corner Longitude:", self)
+        self.viewLLCLon = QLineEdit(self)
+        self.viewURCLatLabel = QLabel("Upper Right Corner Latitude:", self)
+        self.viewURCLat = QLineEdit(self)
+        self.viewURCLonLabel = QLabel("Upper Right Corner Longitude:", self)
+        self.viewURCLon = QLineEdit(self)
+        self.cityLookupButton = QPushButton("Find City Coordinates", self)
 
-        leftBox.addLayout(BulkImportBox, 0, 0, 2, 2)
-        leftBox.addWidget(QFrame(self, frameShape=QFrame.Shape.HLine), 3, 0, 1, 2)
-        leftBox.addLayout(InputBox, 4, 0, 3, 2)
+        viewInputBoxLayout.addWidget(self.viewNameLabel, 0, 0)
+        viewInputBoxLayout.addWidget(self.viewName, 0, 1)
+        viewInputBoxLayout.addWidget(self.viewLatLabel, 1, 0)
+        viewInputBoxLayout.addWidget(self.viewLat, 1, 1)
+        viewInputBoxLayout.addWidget(self.viewLonLabel, 2, 0)
+        viewInputBoxLayout.addWidget(self.viewLon, 2, 1)
+        viewInputBoxLayout.addWidget(self.viewLLCLatLabel, 3, 0)
+        viewInputBoxLayout.addWidget(self.viewLLCLat, 3, 1)
+        viewInputBoxLayout.addWidget(self.viewLLCLonLabel, 4, 0)
+        viewInputBoxLayout.addWidget(self.viewLLCLon, 4, 1)
+        viewInputBoxLayout.addWidget(self.viewURCLatLabel, 5, 0)
+        viewInputBoxLayout.addWidget(self.viewURCLat, 5, 1)
+        viewInputBoxLayout.addWidget(self.viewURCLonLabel, 6, 0)
+        viewInputBoxLayout.addWidget(self.viewURCLon, 6, 1)
+
+        cityLookupGroupBox = QGroupBox("City Lookup", self)
+        cityLookupBoxLayout = QGridLayout()
+        cityLookupGroupBox.setLayout(cityLookupBoxLayout)
+
+        self.cityNameLabel = QLabel("City Name:", self)
+        self.cityName = QLineEdit(self)
+        self.stateNameLabel = QLabel("State Name:", self)
+        self.stateLookupCombo = QComboBox()
+        for state in self.stateList:
+            self.stateLookupCombo.addItem(state)
+        self.latitudeHeightLabel = QLabel("Latitude Height:", self)
+        self.latitudeHeight = QLineEdit(self)
+        self.latitudeHeight.setText("0.3")
+        self.longitudeWidthLabel = QLabel("Longitude Width:", self)
+        self.longitudeWidth = QLineEdit(self)
+        self.longitudeWidth.setText("0.3")
+        self.cityLookupButton.clicked.connect(self.onCityLookupButtonClicked)
+        cityLookupBoxLayout.addWidget(self.cityNameLabel, 0, 0)
+        cityLookupBoxLayout.addWidget(self.cityName, 0, 1)
+        cityLookupBoxLayout.addWidget(self.stateNameLabel, 1, 0)
+        cityLookupBoxLayout.addWidget(self.stateLookupCombo, 1, 1)
+        cityLookupBoxLayout.addWidget(self.latitudeHeightLabel, 2, 0)
+        cityLookupBoxLayout.addWidget(self.latitudeHeight, 2, 1)
+        cityLookupBoxLayout.addWidget(self.longitudeWidthLabel, 3, 0)
+        cityLookupBoxLayout.addWidget(self.longitudeWidth, 3, 1)
+        cityLookupBoxLayout.addWidget(self.cityLookupButton, 4, 0, 1, 2)
+
+        self.PreViewAddButton = QPushButton("Preview View", self)
+        self.PreViewAddButton.clicked.connect(self.onPreViewButtonClicked)
+        self.ViewAddButton = QPushButton("Save View", self)
+        self.ViewAddButton.clicked.connect(self.onViewAddButtonClicked)
+        self.ViewRemoveButton = QPushButton("Remove View", self)
+        self.ViewRemoveButton.clicked.connect(self.onViewRemoveButtonClicked)
+
+        viewInputBox.addWidget(viewInputGroupBox, 0, 0, 5, 2)
+        viewInputBox.addWidget(cityLookupGroupBox, 5, 0, 5, 2)
+        viewInputBox.addWidget(self.PreViewAddButton, 10, 0, 1, 2)
+        viewInputBox.addWidget(self.ViewAddButton, 11, 0, 1, 2)
+        viewInputBox.addWidget(self.ViewRemoveButton, 12, 0, 1, 2)
+
+        rightBox.addWidget(self.plotListWidget, 0, 0, 5, 1)
+        rightBox.addLayout(viewInputBox, 6, 0, 3, 1)
+
+        leftBox.addWidget(bulkImportGroupBox, 0, 0, 3, 2)
+        leftBox.addWidget(InputBoxGroupBox, 3, 0, 3, 2)
+        leftBox.addWidget(FileControlGroupBox, 6, 0, 1, 2)
 
         mylayout.addLayout(leftBox)
         mylayout.addLayout(middleBox)
@@ -1146,6 +724,8 @@ class LectureMapApp(QMainWindow):
                 tables,
                 participants
             )
+            df_events, df_stats = self.read_excel_file(self.excelFilePath)
+            self.recalculateStatistics(df_events, df_stats)
             if not successFlag:
                 self.create_msg_box('Input Failed!',
                                     'Data not saved.\n\nPlease check that the Excel file not open and try again.',
@@ -1156,25 +736,16 @@ class LectureMapApp(QMainWindow):
                 # Clear inputs
                 self.clearAll()
 
-    def getRadioButtonIndex(self):
-        for btn in self.radio_buttons:
-            if btn.isChecked():
-                return self.radio_buttons.index(btn)
 
     def getPlotItem(self):
-        radioButtonIndex = self.getRadioButtonIndex()
-        if radioButtonIndex == 0:
-            return list(self.germanyDict.values())[radioButtonIndex], list(self.germanyDict.keys())[radioButtonIndex]
-        elif 0 < radioButtonIndex < 17:
-            radioButtonIndex = radioButtonIndex - 1  # because first button is for Germany, separate dict
-            return list(self.stateDict.values())[radioButtonIndex], list(self.stateDict.keys())[radioButtonIndex]
-        else:
-            radioButtonIndex = radioButtonIndex - 17  # because first 17 buttons are for Germany and states, separate dict
-            return list(self.cityDict.values())[radioButtonIndex], list(self.cityDict.keys())[radioButtonIndex]
+        entry = self.df_views.loc[self.df_views['View'] == self.plotListWidget.currentItem().text()]
+        if not entry.empty:
+            entry = entry.iloc[0]  # Select the first row
+        return entry
 
-    def onPlotButtonClicked(self):
+    def onPlotButtonClicked(self, doSave=False):
         df_events, df_stats = self.read_excel_file(self.excelFilePath)
-        plotItem, plotItemName = self.getPlotItem()
+        plotItem = self.getPlotItem()
         self.plot_map(
             df_events,
             df_stats,
@@ -1186,8 +757,118 @@ class LectureMapApp(QMainWindow):
             plotItem['llcrnrlon'],
             plotItem['urcrnrlat'],
             plotItem['urcrnrlon'],
-            plotItemName
+            plotItem['View'],
+            doSave
         )
+
+    def setupPlotListWidget(self):
+        self.plotListWidget.clear()
+        self.plotListWidget.addItems(self.df_views['View'].tolist())
+        self.plotListWidget.setCurrentRow(0)
+
+    def onplotListWidgetClicked(self):
+        entry = self.getPlotItem()
+        self.viewName.setText(entry['View'])
+        self.viewLat.setText(str(entry['lat_0']))
+        self.viewLon.setText(str(entry['lon_0']))
+        self.viewLLCLat.setText(str(entry['llcrnrlat']))
+        self.viewLLCLon.setText(str(entry['llcrnrlon']))
+        self.viewURCLat.setText(str(entry['urcrnrlat']))
+        self.viewURCLon.setText(str(entry['urcrnrlon']))
+
+    def ClearViewText(self):
+        self.viewName.clear()
+        self.viewLat.clear()
+        self.viewLon.clear()
+        self.viewLLCLat.clear()
+        self.viewLLCLon.clear()
+        self.viewURCLat.clear()
+        self.viewURCLon.clear()
+
+    def onPreViewButtonClicked(self):
+        lat = self.viewLat.text()
+        lon = self.viewLon.text()
+        llc_lat = self.viewLLCLat.text()
+        llc_lon = self.viewLLCLon.text()
+        urc_lat = self.viewURCLat.text()
+        urc_lon = self.viewURCLon.text()
+        view_name = self.viewName.text()
+        if lat == '' or lon == '' or llc_lat == '' or llc_lon == '' or urc_lat == '' or urc_lon == '' or view_name == '':
+            self.create_msg_box('Input Empty!', 'Fill in all the fields!\n\nData not saved.', 'warning')
+        else:
+            df_events, df_stats = self.read_excel_file(self.excelFilePath)
+            self.plot_map(
+                df_events,
+                df_stats,
+                self.plotPath,
+                self.canvas,
+                float(lat),
+                float(lon),
+                float(llc_lat),
+                float(llc_lon),
+                float(urc_lat),
+                float(urc_lon),
+                self.viewName.text(),
+                doSave=False
+            )
+
+    def onCityLookupButtonClicked(self):
+        lat, lon = self.get_coordinates('', self.cityName.text(), self.stateLookupCombo.currentText(), '')
+        self.viewName.setText(self.cityName.text())
+        self.viewLat.setText(str(lat))
+        self.viewLon.setText(str(lon))
+        self.viewLLCLat.setText(str(lat - float(self.latitudeHeight.text())/2))
+        self.viewLLCLon.setText(str(lon - float(self.longitudeWidth.text())/2))
+        self.viewURCLat.setText(str(lat + float(self.latitudeHeight.text())/2))
+        self.viewURCLon.setText(str(lon + float(self.longitudeWidth.text())/2))
+        self.onPreViewButtonClicked()
+
+    def onViewAddButtonClicked(self):
+        lat = self.viewLat.text()
+        lon = self.viewLon.text()
+        llc_lat = self.viewLLCLat.text()
+        llc_lon = self.viewLLCLon.text()
+        urc_lat = self.viewURCLat.text()
+        urc_lon = self.viewURCLon.text()
+        view_name = self.viewName.text()
+        if lat == '' or lon == '' or llc_lat == '' or llc_lon == '' or urc_lat == '' or urc_lon == '' or view_name == '':
+            self.create_msg_box('Input Empty!', 'Fill in all the fields!\n\nData not saved.', 'warning')
+        else:
+            view_exists = ((self.df_views['View'] == view_name)).any().any()
+            if view_exists:
+                self.df_views.loc[self.df_views['View'] == view_name, 'lat_0'] = float(lat)
+                self.df_views.loc[self.df_views['View'] == view_name, 'lon_0'] = float(lon)
+                self.df_views.loc[self.df_views['View'] == view_name, 'llcrnrlat'] = float(llc_lat)
+                self.df_views.loc[self.df_views['View'] == view_name, 'llcrnrlon'] = float(llc_lon)
+                self.df_views.loc[self.df_views['View'] == view_name, 'urcrnrlat'] = float(urc_lat)
+                self.df_views.loc[self.df_views['View'] == view_name, 'urcrnrlon'] = float(urc_lon)
+                self.df_views.to_excel(self.viewsFilePath, index=False)
+                self.setupPlotListWidget()
+                self.ClearViewText()
+                self.create_msg_box('Input Successful!',
+                                    'View updated successfully')
+            else:
+                self.df_views.loc[len(self.df_views.index) + 1] = [view_name, float(lat), float(lon), float(llc_lon), float(llc_lat), float(urc_lon), float(urc_lat)]
+                self.df_views.to_excel(self.viewsFilePath, index=False)
+                self.setupPlotListWidget()
+                self.ClearViewText()
+                self.create_msg_box('Input Successful!',
+                                    'View saved successfully')
+
+    def onViewRemoveButtonClicked(self):
+        entry = self.plotListWidget.currentItem().text()
+        if entry == 'Deutschland' or entry in self.stateList:
+            self.create_msg_box('Error',
+                                'Cannot remove default views',
+                                'warning')
+            return
+        else:
+            self.df_views = self.df_views[self.df_views.View != entry]
+            self.df_views.to_excel(self.viewsFilePath, index=False)
+            self.setupPlotListWidget()
+            self.ClearViewText()
+            self.create_msg_box('Success',
+                                'View removed successfully')
 
 
 def run_app():
