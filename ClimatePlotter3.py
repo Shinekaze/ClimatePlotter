@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 import sys
 import os
+import time
+import shutil
 
 matplotlib.use('QtAgg')
 from matplotlib.patches import Polygon
@@ -26,13 +28,15 @@ class LectureMapApp(QMainWindow):
         # self.excelFilePath = './Plotter_Output/ClimatePlotter.xlsx'
         # self.plotPath = './Plotter_Output/'
         self.excelFilePath = os.path.join(os.path.dirname(__file__), 'Plotter_Output', 'ClimatePlotter.xlsx')
-        # self.excelFilePath = os.path.join('Plotter_Output', 'ClimatePlotter.xlsx')
+        self.viewsFilePath = os.path.join(os.path.dirname(__file__), 'Views.xlsx')
         self.plotPath = 'Plotter_Output'
 
         self.radio_buttons = []
 
         self.setWindowTitle("Lecture Map Plotter")
         self.setGeometry(100, 100, 1200, 900)
+
+        self.df_views = self.read_views_file(self.viewsFilePath)
 
         self.germanyDict = {
             'Deutschland': {
@@ -534,45 +538,60 @@ class LectureMapApp(QMainWindow):
 
     def get_coordinates(self, address, city_name, state_name, plz_code):
         geolocator = Nominatim(user_agent="http")
-        location = geolocator.geocode(address + ", " + city_name + ", " + state_name + ", " + plz_code + ", Germany")
+        location = geolocator.geocode(
+            address + ", " + city_name + ", " + state_name + ", " + str(plz_code) + ", Germany")
         if location:
             return location.latitude, location.longitude
         else:
-            # Todo: add error handling with try except
             return None, None
 
     def read_excel_file(self, file_path):
         try:
-            df_events = pd.read_excel(file_path, sheet_name=0)
-            df_stats = pd.read_excel(file_path, sheet_name=1)
+            xl = pd.ExcelFile(file_path)
+            if len(xl.sheet_names) > 1 and 'Events' in xl.sheet_names and 'Stats' in xl.sheet_names:
+                df_events = xl.parse('Events')
+                df_stats = xl.parse('Stats')
+            else:
+                if 'Events' not in xl.sheet_names:
+                    df_events = pd.DataFrame(
+                        columns=['Datum', 'Schul/Uni Name', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
+                    df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                                                     'EventCount', 'CityEventTotal', 'TotalTables',
+                                                     'TotalParticipants'])
+                    msgText = "Events sheet not found, Stats reset"
+                elif 'Stats' not in xl.sheet_names:
+                    df_events = xl.parse('Events')
+                    df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                                                     'EventCount', 'CityEventTotal', 'TotalTables',
+                                                     'TotalParticipants'])
+                    msgText = "Stats sheet not found, created new from values in Events sheet"
+                self.recalculateStatistics(df_events, df_stats)
+                self.create_msg_box("Sheet Not Found", msgText, 'warning')
             return df_events, df_stats
-        except pd.errors.EmptyDataError:
+        except FileNotFoundError:
             df_events = pd.DataFrame(
                 columns=['Datum', 'Schul/Uni Name', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
-            df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude', 'EventCount',
-                                             'CityEventTotal', 'TotalTables', 'TotalParticipants'])
+            df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                                             'EventCount', 'CityEventTotal', 'TotalTables',
+                                             'TotalParticipants'])
+            with pd.ExcelWriter(self.excelFilePath) as writer:
+                df_events.to_excel(writer, sheet_name='Events', index=False)
+                df_stats.to_excel(writer, sheet_name='Stats', index=False)
+                self.create_msg_box("File Not Found",
+                                    "ClimatePlotter.xlsx not found in the Plotter_Output directory, created new file",
+                                    'warning')
             return df_events, df_stats
 
     def update_excel(self, file_path, date, name, address, city, state, plz, lat, lon, tables=0,
                      participants=0):
         df_events, df_stats = self.read_excel_file(file_path)
-        df_events.loc[len(df_events.index) + 1] = [date, name, address, city, state, plz, int(tables), int(participants)]
-        school_exists = ((df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city)).any().any()
-        if school_exists:
-            df_stats.loc[(df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city), 'EventCount'] += 1
-            df_stats.loc[(df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city), 'TotalTables'] += int(tables)
-            df_stats.loc[(df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city), 'TotalParticipants'] += int(participants)
-        else:
-            df_stats.loc[len(df_stats.index) + 1] = [name, city, int(plz), lat, lon, 1, -1, int(tables),
-                                                     int(participants)]
-        city_event_total = df_stats[df_stats['Stadt'] == city]['EventCount'].sum()
-        df_stats.loc[df_stats['Stadt'] == city, 'CityEventTotal'] = int(city_event_total)
-        with pd.ExcelWriter(file_path) as writer:
-            df_events.to_excel(writer, sheet_name='Events', index=False)
-            df_stats.to_excel(writer, sheet_name='Stats', index=False)
-        return
+        df_events.loc[len(df_events.index) + 1] = [date, name, address, city, state, str(plz), int(tables),
+                                                   int(participants)]
+        successFlag = self.recalculateStatistics(df_events, df_stats, lat, lon)
+        return successFlag
 
-    def plot_map(self, df_events, df_stats, save_path, canvas, lat, lon, llc_lat, llc_lon, urc_lat, urc_lon, view='Deutschland'):
+    def plot_map(self, df_events, df_stats, save_path, canvas, lat, lon, llc_lat, llc_lon, urc_lat, urc_lon,
+                 view='Deutschland'):
         canvas.figure.clf()
         ax = canvas.figure.add_subplot(111)
         '''
@@ -583,15 +602,6 @@ class LectureMapApp(QMainWindow):
         m = Basemap(resolution='h', lat_0=lat, lon_0=lon, llcrnrlon=llc_lon, llcrnrlat=llc_lat,
                     urcrnrlon=urc_lon, urcrnrlat=urc_lat, epsg=3857)
         m.drawcountries()
-
-        '''
-        https://gdz.bkg.bund.de/index.php/default/webdienste.html
-        https://gdz.bkg.bund.de/index.php/default/webdienste/basemap-webdienste/wms-basemapde-webraster-wms-basemapde-webraster.html
-        de_basemapde_web_raster_farbe
-        de_basemapde_web_raster_grau
-        '''
-        # wms_server = 'https://sgx.geodatenzentrum.de/wms_basemapde?SERVICE=WMS&Request=GetCapabilities'
-        # m.wmsimage(wms_server, layers=["de_basemapde_web_raster_farbe"], verbose=True)
 
         '''
         https://gdz.bkg.bund.de/index.php/default/wmts-topplusopen-wmts-topplus-open.html
@@ -616,23 +626,12 @@ class LectureMapApp(QMainWindow):
                 col = cm.winter(data['TotalParticipants'] / df_max)
                 x, y = m(data['Longitude'], data['Latitude'])
                 ax.scatter(x, y, label=group_cluster, s=msize, color=col)
-
-            # df1 = df_events.loc[df_events['Stadt'] == view].reset_index(drop=True)
-            # df_max = max(df1['TotalParticipants'])
-            # for k, d in df1.iterrows():
-            #     msize = d['TotalParticipants'] * 5
-            #     if msize > 200:
-            #         msize = 200
-            #     col = cm.winter(d['TotalParticipants'] / df_max)
-            #     x, y = m(d['Longitude'], d['Latitude'])
-            #     ax.scatter(x, y, label=k, s=msize, color=col)
         else:
             '''
             Draw the German States
             '''
             shapePath = os.path.join(os.path.dirname(__file__), 'shapefiles', 'DEU_adm1')
             m.readshapefile(shapePath, 'areas')
-            # m.readshapefile('./shapefiles/DEU_adm1', 'areas')
             df_poly = pd.DataFrame(columns=['shapes', 'area'])
             for info, shape in zip(m.areas_info, m.areas):
                 shape_array = np.array(shape)
@@ -647,25 +646,38 @@ class LectureMapApp(QMainWindow):
                     msize = 50
                 x, y = m(data['Longitude'], data['Latitude'])
                 ax.scatter(x, y, label=group_cluster, s=msize, color=next(colors))
-        save_path = os.path.join(os.path.dirname(__file__), save_path, f'{pd.Timestamp.now().strftime("%Y-%m-%d_H%HM%MS%S")}_{view}.png')
-        # save_path = save_path + f'{pd.Timestamp.now().strftime("%Y-%m-%d_%H-%M-%S")}_{view}.png'
+        save_path = os.path.join(os.path.dirname(__file__), save_path,
+                                 f'{pd.Timestamp.now().strftime("%Y-%m-%d_H%HM%MS%S")}_{view}.png')
         plt.savefig(save_path, format='png', dpi=300)
         canvas.draw()
-
 
     def drawInitialMap(self):
         df_events, df_stats = self.read_excel_file(self.excelFilePath)
         self.plot_map(df_events,
                       df_stats,
-                 self.plotPath,
-                 self.canvas,
-                 self.germanyDict['Deutschland']['lat_0'],
-                 self.germanyDict['Deutschland']['lon_0'],
-                 self.germanyDict['Deutschland']['llcrnrlat'],
-                 self.germanyDict['Deutschland']['llcrnrlon'],
-                 self.germanyDict['Deutschland']['urcrnrlat'],
-                 self.germanyDict['Deutschland']['urcrnrlon']
-                 )
+                      self.plotPath,
+                      self.canvas,
+                      self.df_views.loc[self.df_views['View'] == 'Deutschland']['lat_0'],
+                      self.df_views.loc[self.df_views['View'] == 'Deutschland']['lon_0'],
+                      self.df_views.loc[self.df_views['View'] == 'Deutschland']['llcrnrlat'],
+                      self.df_views.loc[self.df_views['View'] == 'Deutschland']['llcrnrlon'],
+                      self.df_views.loc[self.df_views['View'] == 'Deutschland']['urcrnrlat'],
+                      self.df_views.loc[self.df_views['View'] == 'Deutschland']['urcrnrlon']
+                      )
+        # self.plot_map(df_events,
+        #               df_stats,
+        #               self.plotPath,
+        #               self.canvas,
+        #               self.germanyDict['Deutschland']['lat_0'],
+        #               self.germanyDict['Deutschland']['lon_0'],
+        #               self.germanyDict['Deutschland']['llcrnrlat'],
+        #               self.germanyDict['Deutschland']['llcrnrlon'],
+        #               self.germanyDict['Deutschland']['urcrnrlat'],
+        #               self.germanyDict['Deutschland']['urcrnrlon']
+        #               )
+
+    def read_views_file(self, file_path):
+        return pd.read_excel(file_path)
 
     def addExcelFiles(self):
         dialog = QFileDialog()
@@ -677,7 +689,10 @@ class LectureMapApp(QMainWindow):
                 self.bulkImportList.addItem(fileName)
 
     def removeExcelFiles(self):
-        self.bulkImportList.takeItem(self.bulkImportList.currentRow())
+        try:
+            self.bulkImportList.takeItem(self.bulkImportList.currentRow())
+        except OSError:
+            self.create_msg_box("File Error", "Error in removing files", 'warning')
 
     def clearExcelFiles(self):
         self.bulkImportList.clear()
@@ -688,7 +703,7 @@ class LectureMapApp(QMainWindow):
             df = pd.read_excel(bulkFilePath)
             df = df.fillna('')  # Replace NaN with empty string
             for index, row in df.iterrows():
-                date = row['Datum']
+                date = row['Datum'].strftime("%d.%m.%Y")
                 name = row['Schul/Uni']
                 address = str(row['Adresse'])
                 city = str(row['Stadt'])
@@ -697,7 +712,8 @@ class LectureMapApp(QMainWindow):
                 table = str(row['Tische'])
                 participant = str(row['Teilnehmer'])
                 latitude, longitude = self.get_coordinates(address, city, state, plzCode)
-                self.update_excel(self.excelFilePath, date, name, address, city, state, plzCode, latitude, longitude, table, participant)
+                self.update_excel(self.excelFilePath, date, name, address, city, state, plzCode, latitude, longitude,
+                                  table, participant)
             if os.path.exists(bulkFilePath):
                 os.remove(bulkFilePath)
             self.bulkImportList.takeItem(i)
@@ -705,11 +721,16 @@ class LectureMapApp(QMainWindow):
 
     def onLookupAddressButtonClicked(self):
         name = self.nameEdit.text()
-        raw_address = self.get_address(name).split(', ')
-        self.nameEdit.setText(raw_address[0])
-        self.plzEdit.setText(raw_address[-2])
-        self.cityEdit.setText(raw_address[-4])
-        state = raw_address[-3]
+        # create exception handler to handle address of NoneType
+        try:
+            raw_address = self.get_address(name).split(', ')
+            self.nameEdit.setText(raw_address[0])
+            self.plzEdit.setText(raw_address[-2])
+            self.cityEdit.setText(raw_address[-4])
+            state = raw_address[-3]
+        except AttributeError:
+            self.create_msg_box("Address Not Found", "Address not found. Please try again.", 'warning')
+            return
         i = -1
         for item in self.stateDict:
             i += 1
@@ -729,24 +750,24 @@ class LectureMapApp(QMainWindow):
                           'Ring',
                           'Im ',
                           "Am ",
-                            "An ",
-                            "Auf ",
-                            "In ",
-                            "Zum ",
-                            "Zur ",
-                            "Zu ",
-                            "Bei ",
-                            "Unter ",
-                            "Über ",
-                            "Vor ",
-                            "Hinter ",
-                            "Neben ",
+                          "An ",
+                          "Auf ",
+                          "In ",
+                          "Zum ",
+                          "Zur ",
+                          "Zu ",
+                          "Bei ",
+                          "Unter ",
+                          "Über ",
+                          "Vor ",
+                          "Hinter ",
+                          "Neben ",
                           "stieg",
-                            "Stieg",
-                            "steg",
-                            "Steg",
-                            "steig",
-                            "Steig",
+                          "Stieg",
+                          "steg",
+                          "Steg",
+                          "steig",
+                          "Steig",
                           "Ufer"
                           ]
         for field in raw_address:
@@ -762,9 +783,153 @@ class LectureMapApp(QMainWindow):
         self.addressEdit.setText('')
         self.cityEdit.setText('')
         self.plzEdit.setText('')
+        self.dateEdit.setDate(QDate.currentDate())
         self.stateCombo.setCurrentIndex(0)
         self.tableEdit.setValue(0)
         self.participantEdit.setValue(0)
+
+    def onRecalculateButtonClicked(self):
+        msgBox = QMessageBox(self)
+        msgBox.setIcon(QMessageBox.Icon.Warning)
+        msgBox.setWindowTitle("Recalculate Statistics?")
+        msgBox.setText(
+            "Proceeding will clear all existing statistics and recalculate them from scratch.\n\n "
+            "Are you sure you want to proceed?\n\n "
+            "Calculation may take a while.")
+        msgBox.setStandardButtons(
+            QMessageBox.StandardButton.Yes |
+            QMessageBox.StandardButton.No
+        )
+        button = msgBox.exec()
+
+        if button == QMessageBox.StandardButton.No:
+            return
+        elif button == QMessageBox.StandardButton.Yes:
+            df_events, df_stats = self.read_excel_file(self.excelFilePath)
+            df_stats = pd.DataFrame(columns=[
+                'Schul/Uni Name',
+                'Stadt',
+                'PLZ',
+                'Latitude',
+                'Longitude',
+                'EventCount',
+                'CityEventTotal',
+                'TotalTables',
+                'TotalParticipants'
+            ]
+            )
+            self.recalculateStatistics(df_events, df_stats)
+            self.create_msg_box("Complete", "Recalculation Complete")
+            return
+
+    def recalculateStatistics(self, df_events, df_stats, lat=None, lon=None):
+        for index, row in df_events.iterrows():
+            name = row['Schul/Uni Name']
+            address = row['Adresse']
+            city = row['Stadt']
+            state = row['Bundesland']
+            plz = row['PLZ']
+            tables = row['Tische']
+            participants = row['Teilnehmer']
+            school_exists = ((df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city)).any().any()
+            if school_exists:
+                df_stats.loc[(df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city), 'EventCount'] += 1
+                df_stats.loc[
+                    (df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city), 'TotalTables'] += int(
+                    tables)
+                df_stats.loc[
+                    (df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city), 'TotalParticipants'] += int(
+                    participants)
+            else:
+                if lat is None or lon is None:
+                    lat, lon = self.get_coordinates(address, city, state, plz)
+                    time.sleep(0.25)  # rate limit to max 4 requests per second
+                df_stats.loc[len(df_stats.index) + 1] = [name, city, plz, lat, lon, 1, -1, int(tables),
+                                                         int(participants)]
+            city_event_total = df_stats[df_stats['Stadt'] == city]['EventCount'].sum()
+            df_stats.loc[df_stats['Stadt'] == city, 'CityEventTotal'] = int(city_event_total)
+        try:
+            with pd.ExcelWriter(self.excelFilePath) as writer:
+                df_events.to_excel(writer, sheet_name='Events', index=False)
+                df_stats.to_excel(writer, sheet_name='Stats', index=False)
+            return True
+        except OSError:
+            return False
+
+    def onArchiveButtonClicked(self):
+        # df_germany = pd.DataFrame.from_dict(self.germanyDict, orient='index')
+        # df_bundesland = pd.DataFrame.from_dict(self.stateDict, orient='index')
+        # df_cities = pd.DataFrame.from_dict(self.cityDict, orient='index').drop(columns=['plz'])
+        #
+        # df_concat = pd.concat([df_germany, df_bundesland, df_cities])
+        # df_concat.index.name = 'View'
+        # df_concat.to_excel('./Views.xlsx')
+
+        msgBox = QMessageBox(self)
+        msgBox.setIcon(QMessageBox.Icon.Warning)
+        msgBox.setWindowTitle("Archive Excel?")
+        msgBox.setText(
+            "Archive and clear to start a new data file\n\n"
+            "Archive and keep to keep the current data file\n\n"
+            "Cancel to keep the current data file without archiving"
+        )
+        archive_and_clear_button = QPushButton("Archive and Clear")
+        archive_and_keep_button = QPushButton("Archive and Keep")
+
+        msgBox.addButton(archive_and_clear_button, QMessageBox.ButtonRole.AcceptRole)
+        msgBox.addButton(archive_and_keep_button, QMessageBox.ButtonRole.AcceptRole)
+        msgBox.addButton(QMessageBox.StandardButton.Cancel)
+
+        msgBox.exec()
+
+        if msgBox.clickedButton() == archive_and_clear_button:
+            self.archive_and_clear()
+        elif msgBox.clickedButton() == archive_and_keep_button:
+            self.archive_and_keep()
+        elif msgBox.clickedButton() == QMessageBox.StandardButton.Cancel:
+            return
+
+
+    def archive_and_clear(self):
+        print("archive and clear")
+        try:
+            print("try")
+            self.archiveExcel()
+            df_events = pd.DataFrame(
+                columns=['Datum', 'Schul/Uni Name', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
+            df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                                             'EventCount', 'CityEventTotal', 'TotalTables',
+                                             'TotalParticipants'])
+            with pd.ExcelWriter(self.excelFilePath) as writer:
+                df_events.to_excel(writer, sheet_name='Events', index=False)
+                df_stats.to_excel(writer, sheet_name='Stats', index=False)
+        except OSError:
+            print("except")
+            self.create_msg_box("Error", "Error in archiving data")
+        return
+
+    def archive_and_keep(self):
+        print("archive and keep")
+        self.archiveExcel()
+        return
+
+    def archiveExcel(self):
+        print("archive excel")
+        date = pd.Timestamp.now().strftime("%Y-%m-%d_H%HM%MS%S")
+        folder_path = os.path.join(os.path.dirname(__file__), 'Plotter_Output', 'Archive')
+        print(folder_path)
+        if not os.path.exists(folder_path):
+            print("folder doesn't exist")
+            os.makedirs(folder_path)
+        shutil.copy(
+            self.excelFilePath,
+            os.path.join(
+                folder_path,
+                date + "_Archived_ClimatePlotter.xlsx"
+            )
+        )
+        self.create_msg_box("Complete", "Archiving Complete")
+        return
 
     def initUI(self):
 
@@ -860,6 +1025,12 @@ class LectureMapApp(QMainWindow):
         self.clearAllButton = QPushButton("Clear All", self)
         self.clearAllButton.clicked.connect(self.clearAll)
 
+        self.recalculateButton = QPushButton("Recalculate Statistics", self)
+        self.recalculateButton.clicked.connect(self.onRecalculateButtonClicked)
+
+        self.archiveButton = QPushButton("Archive Xlsx", self)
+        self.archiveButton.clicked.connect(self.onArchiveButtonClicked)
+
         InputBox.addWidget(self.nameLabel, 0, 0)
         InputBox.addWidget(self.nameEdit, 0, 1)
         InputBox.addWidget(self.addressLookupButton, 1, 0, 1, 2)
@@ -880,6 +1051,8 @@ class LectureMapApp(QMainWindow):
         InputBox.addWidget(self.updateCsvButton, 9, 0)
         InputBox.addWidget(self.plotButton, 9, 1)
         InputBox.addWidget(self.clearAllButton, 10, 0, 1, 2)
+        InputBox.addWidget(self.recalculateButton, 11, 0, 1, 2)
+        InputBox.addWidget(self.archiveButton, 12, 0, 1, 2)
 
         '''
         middleBox
@@ -891,25 +1064,34 @@ class LectureMapApp(QMainWindow):
         '''
         rightBox
         '''
-        for country in self.germanyDict:
-            radioButton = QRadioButton(country, self)
+        for index, view in self.df_views.iterrows():
+            radioButton = QRadioButton(view['View'], self)
             rightBox.addWidget(radioButton)
             self.radio_buttons.append(radioButton)
-        radioButton.setChecked(True)
+            if view['View'] == 'Deutschland' or index == 16:
+                rightBox.addWidget(QFrame(self, frameShape=QFrame.Shape.HLine))
 
-        rightBox.addWidget(QFrame(self, frameShape=QFrame.Shape.HLine))
+        # print(self.df_views.loc[self.df_views['View'] == 'Deutschland']['lat_0'])
 
-        for state in self.stateDict:
-            radioButton = QRadioButton(state, self)
-            rightBox.addWidget(radioButton)
-            self.radio_buttons.append(radioButton)
-
-        rightBox.addWidget(QFrame(self, frameShape=QFrame.Shape.HLine))
-
-        for city in self.cityDict:
-            radioButton = QRadioButton(city, self)
-            rightBox.addWidget(radioButton)
-            self.radio_buttons.append(radioButton)
+        # for country in self.germanyDict:
+        #     radioButton = QRadioButton(country, self)
+        #     rightBox.addWidget(radioButton)
+        #     self.radio_buttons.append(radioButton)
+        # radioButton.setChecked(True)
+        #
+        # rightBox.addWidget(QFrame(self, frameShape=QFrame.Shape.HLine))
+        #
+        # for state in self.stateDict:
+        #     radioButton = QRadioButton(state, self)
+        #     rightBox.addWidget(radioButton)
+        #     self.radio_buttons.append(radioButton)
+        #
+        # rightBox.addWidget(QFrame(self, frameShape=QFrame.Shape.HLine))
+        #
+        # for city in self.cityDict:
+        #     radioButton = QRadioButton(city, self)
+        #     rightBox.addWidget(radioButton)
+        #     self.radio_buttons.append(radioButton)
 
         leftBox.addLayout(BulkImportBox, 0, 0, 2, 2)
         leftBox.addWidget(QFrame(self, frameShape=QFrame.Shape.HLine), 3, 0, 1, 2)
@@ -924,6 +1106,20 @@ class LectureMapApp(QMainWindow):
         # Draw the initial map
         self.drawInitialMap()
 
+    def create_msg_box(self, title, text, type='info'):
+        msgBox = QMessageBox(self)
+        if type == 'info':
+            type = QMessageBox.Icon.Information
+        elif type == 'warning':
+            type = QMessageBox.Icon.Warning
+        elif type == 'critical':
+            type = QMessageBox.Icon.Critical
+        msgBox.setIcon(QMessageBox.Icon.Information)
+        msgBox.setWindowTitle(title)
+        msgBox.setText(text)
+        msgBox.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msgBox.exec()
+
     def onUpdateCsvButtonClicked(self):
         date = self.dateEdit.text()
         name = self.nameEdit.text()
@@ -934,29 +1130,31 @@ class LectureMapApp(QMainWindow):
         tables = self.tableEdit.text()
         participants = self.participantEdit.text()
         if name == '' or city == '' or state == '':
-            msgBox = QMessageBox(self)
-            msgBox.setIcon(QMessageBox.Icon.Information)
-            msgBox.setWindowTitle("Input Empty!")
-            msgBox.setText("Fill in all the fields!\n\nData not saved.")
-            msgBox.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msgBox.exec()
+            self.create_msg_box('Input Empty!', 'Fill in all the fields!\n\nData not saved.', 'warning')
         else:
             latitude, longitude = self.get_coordinates(address, city, state, plzCode)
-            self.update_excel(self.excelFilePath, date, name, address, city, state, plzCode, latitude, longitude, tables, participants)
-            msgBox = QMessageBox(self)
-            msgBox.setIcon(QMessageBox.Icon.Information)
-            msgBox.setWindowTitle("Input Successful!")
-            msgBox.setText("Data saved successfully!\n\nClick on 'Update Plot' to see the changes.")
-            msgBox.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msgBox.exec()
-
-            # Clear inputs
-            self.nameEdit.clear()
-            self.cityEdit.clear()
-            self.addressEdit.clear()
-            self.plzEdit.clear()
-            self.tableEdit.setValue(0)
-            self.participantEdit.setValue(0)
+            successFlag = self.update_excel(
+                self.excelFilePath,
+                date,
+                name,
+                address,
+                city,
+                state,
+                plzCode,
+                latitude,
+                longitude,
+                tables,
+                participants
+            )
+            if not successFlag:
+                self.create_msg_box('Input Failed!',
+                                    'Data not saved.\n\nPlease check that the Excel file not open and try again.',
+                                    'warning')
+            else:
+                self.create_msg_box('Input Successful!',
+                                    'Data saved successfully!\n\nClick on "Update Plot" to see the changes.')
+                # Clear inputs
+                self.clearAll()
 
     def getRadioButtonIndex(self):
         for btn in self.radio_buttons:
@@ -977,12 +1175,19 @@ class LectureMapApp(QMainWindow):
     def onPlotButtonClicked(self):
         df_events, df_stats = self.read_excel_file(self.excelFilePath)
         plotItem, plotItemName = self.getPlotItem()
-        self.plot_map(df_events, df_stats, self.plotPath, self.canvas, plotItem['lat_0'], plotItem['lon_0'], plotItem['llcrnrlat'],
-                 plotItem['llcrnrlon'], plotItem['urcrnrlat'], plotItem['urcrnrlon'], plotItemName)
-
-        # # Clear inputs
-        # self.nameEdit.clear()
-        # self.cityEdit.clear()
+        self.plot_map(
+            df_events,
+            df_stats,
+            self.plotPath,
+            self.canvas,
+            plotItem['lat_0'],
+            plotItem['lon_0'],
+            plotItem['llcrnrlat'],
+            plotItem['llcrnrlon'],
+            plotItem['urcrnrlat'],
+            plotItem['urcrnrlon'],
+            plotItemName
+        )
 
 
 def run_app():
