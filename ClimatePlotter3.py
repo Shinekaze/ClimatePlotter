@@ -12,7 +12,6 @@ import shutil
 
 matplotlib.use('QtAgg')
 from matplotlib.patches import Polygon
-# from matplotlib.collections import PatchCollection
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from PyQt6.QtWidgets import *
 from PyQt6.QtGui import QIcon
@@ -20,13 +19,13 @@ from PyQt6.QtCore import *
 
 
 # from matplotlib.figure import Figure
+class AddressError(Exception):
+    pass
 
 class LectureMapApp(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        # self.excelFilePath = './Plotter_Output/ClimatePlotter.xlsx'
-        # self.plotPath = './Plotter_Output/'
         self.excelFilePath = os.path.join(os.path.dirname(__file__), 'Plotter_Output', 'ClimatePlotter.xlsx')
         self.viewsFilePath = os.path.join(os.path.dirname(__file__), 'Views.xlsx')
         self.plotPath = 'Plotter_Output'
@@ -59,9 +58,9 @@ class LectureMapApp(QMainWindow):
 
     def get_address(self, name):
         geolocator = Nominatim(user_agent="http")
-        location = geolocator.geocode(name + ", Germany")
+        location = geolocator.geocode(name + ", Germany", addressdetails=True)
         if location:
-            return location.address
+            return location.raw
         else:
             return None
 
@@ -83,14 +82,14 @@ class LectureMapApp(QMainWindow):
             else:
                 if 'Events' not in xl.sheet_names:
                     df_events = pd.DataFrame(
-                        columns=['Datum', 'Schul/Uni Name', 'Adresse', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
-                    df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                        columns=['Datum', 'Hochschule', 'Adresse', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
+                    df_stats = pd.DataFrame(columns=['Hochschule', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
                                                      'EventCount', 'CityEventTotal', 'TotalTables',
                                                      'TotalParticipants', 'CityParticipantsTotal'])
                     msgText = "Events sheet not found, Stats reset"
                 elif 'Stats' not in xl.sheet_names:
                     df_events = xl.parse('Events')
-                    df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                    df_stats = pd.DataFrame(columns=['Hochschule', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
                                                      'EventCount', 'CityEventTotal', 'TotalTables',
                                                      'TotalParticipants', 'CityParticipantsTotal'])
                     msgText = "Stats sheet not found, created new from values in Events sheet"
@@ -99,8 +98,8 @@ class LectureMapApp(QMainWindow):
             return df_events, df_stats
         except FileNotFoundError:
             df_events = pd.DataFrame(
-                columns=['Datum', 'Schul/Uni Name', 'Adresse', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
-            df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                columns=['Datum', 'Hochschule', 'Adresse', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
+            df_stats = pd.DataFrame(columns=['Hochschule', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
                                              'EventCount', 'CityEventTotal', 'TotalTables',
                                              'TotalParticipants', 'CityParticipantsTotal'])
             with pd.ExcelWriter(self.excelFilePath) as writer:
@@ -115,8 +114,6 @@ class LectureMapApp(QMainWindow):
                      participants=0):
         df_events, df_stats = self.read_excel_file(file_path)
         df_events.loc[len(df_events.index) + 1] = [date, name, address, city, state, str(plz), int(tables), int(participants)]
-        # successFlag = self.recalculateStatistics(df_events, df_stats, lat, lon)
-        # return successFlag
         try:
             with pd.ExcelWriter(self.excelFilePath) as writer:
                 df_events.to_excel(writer, sheet_name='Events', index=False)
@@ -176,14 +173,17 @@ class LectureMapApp(QMainWindow):
             Handle drawing the cities
             '''
             df1 = df_stats.loc[df_stats['Stadt'] == view].reset_index(drop=True)
-            df_max = max(df1['TotalParticipants'])
-            for group_cluster, data in df1.iterrows():
-                msize = data['TotalParticipants'] * 5
-                if msize > 200:
-                    msize = 200
-                col = cm.winter(data['TotalParticipants'] / df_max)
-                x, y = m(data['Longitude'], data['Latitude'])
-                ax.scatter(x, y, label=group_cluster, marker='*', s=msize, color=col)
+            if df1.empty:
+                pass
+            else:
+                df_max = max(df1['TotalParticipants'])
+                for group_cluster, data in df1.iterrows():
+                    msize = data['TotalParticipants'] * 5
+                    if msize > 200:
+                        msize = 200
+                    col = cm.winter(data['TotalParticipants'] / df_max)
+                    x, y = m(data['Longitude'], data['Latitude'])
+                    ax.scatter(x, y, label=group_cluster, marker='*', s=msize, color=col)
         canvas.draw()
         if doSave:
             save_path = os.path.join(os.path.dirname(__file__), save_path,
@@ -226,88 +226,246 @@ class LectureMapApp(QMainWindow):
     def clearExcelFiles(self):
         self.bulkImportList.clear()
 
+    def acceptBulkImport(self):
+        self.dialogBox.accept()
+        self.dialogBox.close()
+
+    def rejectBulkImport(self):
+        self.dialogBox.reject()
+        self.dialogBox.close()
+
     def bulkImportExcelFiles(self):
+        importedData = []
         for i in reversed(range(self.bulkImportList.count())):
             bulkFilePath = self.bulkImportList.item(i).text()
             df = pd.read_excel(bulkFilePath)
             df = df.fillna('')  # Replace NaN with empty string
             for index, row in df.iterrows():
-                date = row['Datum'].strftime("%d.%m.%Y")
-                name = row['Schul/Uni']
-                address = str(row['Adresse'])
-                city = str(row['Stadt'])
+                if row['PLZ'] != '':
+                    plz = str(int(row['PLZ']))
+                else:
+                    plz = ''
+
+                raw_address = self.get_address(row['Hochschule'] +
+                                               ", " +
+                                               row['Stadt'] +
+                                               ", " +
+                                               row['Bundesland'] +
+                                               ", " +
+                                               plz
+                                               )
+                suggested_name = raw_address['name']
+                checkKeys = ('postcode', 'road')
+                if all(keys in raw_address['address'] for keys in checkKeys):
+                    suggested_plz = raw_address['address']['postcode']
+                    if 'house_number' in raw_address['address']:
+                        suggested_address = raw_address['address']['road'] + ' ' + raw_address['address']['house_number']
+                    else:
+                        suggested_address = raw_address['address']['road']
+                suggested_city = raw_address['address']['city']
+                if raw_address['address']['city'] == 'Berlin':
+                    suggested_state = 'Berlin'
+                elif raw_address['address']['city'] == 'Hamburg':
+                    suggested_state = 'Hamburg'
+                elif raw_address['address']['city'] == 'Bremen':
+                    suggested_state = 'Bremen'
+                else:
+                    suggested_state = raw_address['address']['state']
+
+                QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+                buttonBox = QDialogButtonBox(QBtn)
+                buttonBox.accepted.connect(self.acceptBulkImport)
+                buttonBox.rejected.connect(self.rejectBulkImport)
+
+                self.dialogBox = QDialog(self)
+                self.dialogBox.setWindowTitle("Bulk Import - Certify Data")
+                self.dialogBox.resize(400, 200)
+                self.dialogBox.layout = QGridLayout()
+
+                firstColumn = QLabel('')
+                secondColumn = QLabel('Data from Excel')
+                thirdColumn = QLabel('Data from OpenStreetMap')
+
+                dateLabel = QLabel("Date:", self)
+                dateEdit = QLineEdit(self)
+                if row['Datum'] == '':
+                    dateEdit.setText('01.01.1900')
+                else:
+                    dateEdit.setText(row['Datum'].strftime("%d.%m.%Y"))
+                dateSuggested = QLabel('')
+
+                nameLabel = QLabel("Name:", self)
+                nameEdit = QLineEdit(self)
+                nameEdit.setText(row['Hochschule'])
+                nameSuggested = QLineEdit(suggested_name)
+                nameSuggested.setReadOnly(True)
+
+                addressLabel = QLabel("Address:", self)
+                addressEdit = QLineEdit(self)
+                addressEdit.setText(str(row['Adresse']))
+                addressSuggested = QLineEdit(suggested_address)
+                addressSuggested.setReadOnly(True)
+
+                cityLabel = QLabel("City:", self)
+                cityEdit = QLineEdit(self)
+                cityEdit.setText(row['Stadt'])
+                citySuggested = QLineEdit(suggested_city)
+                citySuggested.setReadOnly(True)
+
+                plzLabel = QLabel("PLZ Code:", self)
+                plzEdit = QLineEdit(self)
+                plzEdit.setText(plz)
+                plzSuggested = QLineEdit(suggested_plz)
+                plzSuggested.setReadOnly(True)
+
+                stateLabel = QLabel("State:", self)
+                stateCombo = QComboBox()
+                for state in self.stateList:
+                    stateCombo.addItem(state)
                 state = str(row['Bundesland'])
-                plzCode = str(row['PLZ'])
-                table = str(row['Tische'])
-                participant = str(row['Teilnehmer'])
-                latitude, longitude = self.get_coordinates(address, city, state, plzCode)
-                time.sleep(0.25)  # rate limit to max 4 requests per second
-                self.update_excel(self.excelFilePath, date, name, address, city, state, plzCode, latitude, longitude,
-                                  table, participant)
-            if os.path.exists(bulkFilePath):
-                os.remove(bulkFilePath)
-            self.bulkImportList.takeItem(i)
+                if state in self.stateList:
+                    stateCombo.setCurrentIndex(self.stateList.index(state))
+                stateSuggested = QLineEdit(suggested_state)
+                stateSuggested.setReadOnly(True)
+
+                tableLabel = QLabel("Tables:", self)
+                tableEdit = QSpinBox(self)
+                tableEdit.setMinimum(0)
+                tableEdit.setMaximum(2000)
+                tableEdit.setValue(int(row['Tische']))
+                tableSuggested = QLabel('')
+
+                participantLabel = QLabel("Participants:", self)
+                participantEdit = QSpinBox(self)
+                participantEdit.setMinimum(0)
+                participantEdit.setMaximum(9999)
+                participantEdit.setValue(int(row['Teilnehmer']))
+                participantSuggested = QLabel('')
+
+                self.dialogBox.layout.addWidget(firstColumn, 0, 0)
+                self.dialogBox.layout.addWidget(secondColumn, 0, 1)
+                self.dialogBox.layout.addWidget(thirdColumn, 0, 2)
+                self.dialogBox.layout.addWidget(dateLabel, 1, 0)
+                self.dialogBox.layout.addWidget(dateEdit, 1, 1)
+                self.dialogBox.layout.addWidget(dateSuggested, 1, 2)
+                self.dialogBox.layout.addWidget(nameLabel, 2, 0)
+                self.dialogBox.layout.addWidget(nameEdit, 2, 1)
+                self.dialogBox.layout.addWidget(nameSuggested, 2, 2)
+                self.dialogBox.layout.addWidget(addressLabel, 3, 0)
+                self.dialogBox.layout.addWidget(addressEdit, 3, 1)
+                self.dialogBox.layout.addWidget(addressSuggested, 3, 2)
+                self.dialogBox.layout.addWidget(cityLabel, 4, 0)
+                self.dialogBox.layout.addWidget(cityEdit, 4, 1)
+                self.dialogBox.layout.addWidget(citySuggested, 4, 2)
+                self.dialogBox.layout.addWidget(plzLabel, 5, 0)
+                self.dialogBox.layout.addWidget(plzEdit, 5, 1)
+                self.dialogBox.layout.addWidget(plzSuggested, 5, 2)
+                self.dialogBox.layout.addWidget(stateLabel, 6, 0)
+                self.dialogBox.layout.addWidget(stateCombo, 6, 1)
+                self.dialogBox.layout.addWidget(stateSuggested, 6, 2)
+                self.dialogBox.layout.addWidget(tableLabel, 7, 0)
+                self.dialogBox.layout.addWidget(tableEdit, 7, 1)
+                self.dialogBox.layout.addWidget(tableSuggested, 7, 2)
+                self.dialogBox.layout.addWidget(participantLabel, 8, 0)
+                self.dialogBox.layout.addWidget(participantEdit, 8, 1)
+                self.dialogBox.layout.addWidget(participantSuggested, 8, 2)
+                self.dialogBox.layout.addWidget(buttonBox, 9, 0, 1, 3)
+
+                self.dialogBox.setLayout(self.dialogBox.layout)
+                button = self.dialogBox.exec()
+                if button == 0:
+                    importedData.append((bulkFilePath, index))
+                    continue
+                elif button == 1:
+                    date = dateEdit.text()
+                    name = nameEdit.text()
+                    address = addressEdit.text()
+                    city = cityEdit.text()
+                    state = stateCombo.currentText()
+                    plzCode = str(plzEdit.text())
+                    table = str(tableEdit.value())
+                    participant = str(participantEdit.value())
+                    latitude, longitude = self.get_coordinates(address, city, state, plzCode)
+                    time.sleep(0.25)  # rate limit to max 4 requests per second
+                    self.update_excel(self.excelFilePath, date, name, address, city, state, plzCode, latitude, longitude,
+                                      table, participant)
+
+        for i in reversed(range(self.bulkImportList.count())):
+            # if i in importedData then skip, else delete file and remove from list
+            if i in [x[1] for x in importedData]:
+                continue
+            else:
+                bulkFilePath = self.bulkImportList.item(i).text()
+                if os.path.exists(bulkFilePath):
+                    os.remove(bulkFilePath)
+                self.bulkImportList.takeItem(i)
+
+        if importedData != []:
+            text = 'Not Processed:\n'
+            for i in importedData:
+                text += f'{i[0].split("/")[-1]} Line {i[1]}\n'
+            self.create_msg_box("Bulk Import Complete", text, 'warning')
+
         df_events, df_stats = self.read_excel_file(self.excelFilePath)
+        df_events = df_events.fillna('')  # Replace NaN with empty string
+        df_stats = df_stats.fillna('')  # Replace NaN with empty string
         self.recalculateStatistics(df_events, df_stats)
         self.drawInitialMap()
 
     def onLookupAddressButtonClicked(self):
         name = self.nameEdit.text()
-        # create exception handler to handle address of NoneType
         try:
-            raw_address = self.get_address(name).split(', ')
-            self.nameEdit.setText(raw_address[0])
-            self.plzEdit.setText(raw_address[-2])
-            self.cityEdit.setText(raw_address[-4])
-            state = raw_address[-3]
+            raw_address = self.get_address(name)
+            self.nameEdit.setText(raw_address['name'])
+            if raw_address[('addresstype')] == 'state':
+                state = raw_address['address']['state']
+                raise AddressError
+            elif raw_address['addresstype'] == 'city':
+                if raw_address['address']['city'] == 'Berlin':
+                    state = 'Berlin'
+                    self.cityEdit.setText('Berlin')
+                elif raw_address['address']['city'] == 'Hamburg':
+                    state = 'Hamburg'
+                    self.cityEdit.setText('Hamburg')
+                elif raw_address['address']['city'] == 'Bremen':
+                    state = 'Bremen'
+                    self.cityEdit.setText('Bremen')
+                else:
+                    state = raw_address['address']['state']
+                    self.cityEdit.setText(raw_address['address']['city'])
+            else:
+                self.cityEdit.setText(raw_address['address']['city'])
+                if raw_address['address']['city'] == 'Berlin':
+                    state = 'Berlin'
+                elif raw_address['address']['city'] == 'Hamburg':
+                    state = 'Hamburg'
+                elif raw_address['address']['city'] == 'Bremen':
+                    state = 'Bremen'
+                else:
+                    state = raw_address['address']['state']
+
+            checkKeys = ('postcode', 'road')
+            if all(keys in raw_address['address'] for keys in checkKeys):
+                self.plzEdit.setText(raw_address['address']['postcode'])
+                if 'house_number' in raw_address['address']:
+                    self.addressEdit.setText(raw_address['address']['road'] + ' ' + raw_address['address']['house_number'])
+                else:
+                    self.addressEdit.setText(raw_address['address']['road'])
+            else:
+                raise AddressError
+
         except AttributeError:
             self.create_msg_box("Address Not Found", "Address not found. Please try again.", 'warning')
+            return
+        except AddressError:
+            self.create_msg_box("Address Error",
+                                f"Provided input was not exact enough. \n\n"
+                                f"Returned address was:\n\n {raw_address['display_name']}.",
+                                'warning')
             return
 
         # find the state in the state list and set the combo box to that index
         self.stateCombo.setCurrentIndex(self.stateList.index(state))
-
-        substring_list = ['straße',
-                          'platz',
-                          'weg',
-                          'gasse',
-                          'allee',
-                          'ring',
-                          'Straße',
-                          'Platz',
-                          'Weg',
-                          'Gasse',
-                          'Allee',
-                          'Ring',
-                          'Im ',
-                          "Am ",
-                          "An ",
-                          "Auf ",
-                          "In ",
-                          "Zum ",
-                          "Zur ",
-                          "Zu ",
-                          "Bei ",
-                          "Unter ",
-                          "Über ",
-                          "Vor ",
-                          "Hinter ",
-                          "Neben ",
-                          "stieg",
-                          "Stieg",
-                          "steg",
-                          "Steg",
-                          "steig",
-                          "Steig",
-                          "Ufer"
-                          ]
-        for field in raw_address:
-            if any(substring in field for substring in substring_list):
-                number = raw_address.index(field)
-                if number == 2:
-                    self.addressEdit.setText(raw_address[2] + ' ' + raw_address[1])
-                else:
-                    self.addressEdit.setText(raw_address[1])
 
     def clearAll(self):
         self.nameEdit.setText('')
@@ -337,7 +495,7 @@ class LectureMapApp(QMainWindow):
             return
         elif button == QMessageBox.StandardButton.Yes:
             df_events, df_stats = self.read_excel_file(self.excelFilePath)
-            df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+            df_stats = pd.DataFrame(columns=['Hochschule', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
                                              'EventCount', 'CityEventTotal', 'TotalTables',
                                              'TotalParticipants', 'CityParticipantsTotal'])
             self.recalculateStatistics(df_events, df_stats)
@@ -345,25 +503,25 @@ class LectureMapApp(QMainWindow):
             return
 
     def recalculateStatistics(self, df_events, df_stats, lat=None, lon=None):
-        df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+        df_stats = pd.DataFrame(columns=['Hochschule', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
                                          'EventCount', 'CityEventTotal', 'TotalTables',
                                          'TotalParticipants', 'CityParticipantsTotal'])
         for index, row in df_events.iterrows():
-            name = row['Schul/Uni Name']
+            name = row['Hochschule']
             address = row['Adresse']
             city = row['Stadt']
             state = row['Bundesland']
             plz = row['PLZ']
             tables = row['Tische']
             participants = row['Teilnehmer']
-            school_exists = ((df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city)).any().any()
+            school_exists = ((df_stats['Hochschule'] == name) & (df_stats['Stadt'] == city)).any().any()
             if school_exists:
-                df_stats.loc[(df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city), 'EventCount'] += 1
+                df_stats.loc[(df_stats['Hochschule'] == name) & (df_stats['Stadt'] == city), 'EventCount'] += 1
                 df_stats.loc[
-                    (df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city), 'TotalTables'] += int(
+                    (df_stats['Hochschule'] == name) & (df_stats['Stadt'] == city), 'TotalTables'] += int(
                     tables)
                 df_stats.loc[
-                    (df_stats['Schul/Uni Name'] == name) & (df_stats['Stadt'] == city), 'TotalParticipants'] += int(
+                    (df_stats['Hochschule'] == name) & (df_stats['Stadt'] == city), 'TotalParticipants'] += int(
                     participants)
             else:
                 if lat is None or lon is None:
@@ -416,8 +574,8 @@ class LectureMapApp(QMainWindow):
         try:
             self.archiveExcel()
             df_events = pd.DataFrame(
-                columns=['Datum', 'Schul/Uni Name', 'Adresse', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
-            df_stats = pd.DataFrame(columns=['Schul/Uni Name', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                columns=['Datum', 'Hochschule', 'Adresse', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
+            df_stats = pd.DataFrame(columns=['Hochschule', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
                                              'EventCount', 'CityEventTotal', 'TotalTables',
                                              'TotalParticipants', 'CityParticipantsTotal'])
             with pd.ExcelWriter(self.excelFilePath) as writer:
@@ -505,7 +663,7 @@ class LectureMapApp(QMainWindow):
         self.cityLabel = QLabel("City:", self)
         self.cityEdit = QLineEdit(self)
 
-        self.plzLabel = QLabel("PLZ Code (Optional):", self)
+        self.plzLabel = QLabel("PLZ Code:", self)
         self.plzEdit = QLineEdit(self)
 
         self.stateLabel = QLabel("State:", self)
@@ -526,10 +684,13 @@ class LectureMapApp(QMainWindow):
         self.tableLabel = QLabel("Tische:", self)
         self.tableEdit = QSpinBox(self)
         self.tableEdit.setMinimum(0)
+        self.tableEdit.setMaximum(2000)
+        self.tableEdit.setMinimum(0)
 
         self.participantLabel = QLabel("Teilnehmer:", self)
         self.participantEdit = QSpinBox(self)
         self.participantEdit.setMinimum(0)
+        self.participantEdit.setMaximum(9999)
 
         # New button for updating CSV
         self.updateCsvButton = QPushButton("Update Excel", self)
@@ -638,22 +799,12 @@ class LectureMapApp(QMainWindow):
         self.stateLookupCombo = QComboBox()
         for state in self.stateList:
             self.stateLookupCombo.addItem(state)
-        self.latitudeHeightLabel = QLabel("Latitude Height:", self)
-        self.latitudeHeight = QLineEdit(self)
-        self.latitudeHeight.setText("0.3")
-        self.longitudeWidthLabel = QLabel("Longitude Width:", self)
-        self.longitudeWidth = QLineEdit(self)
-        self.longitudeWidth.setText("0.3")
         self.cityLookupButton.clicked.connect(self.onCityLookupButtonClicked)
         cityLookupBoxLayout.addWidget(self.cityNameLabel, 0, 0)
         cityLookupBoxLayout.addWidget(self.cityName, 0, 1)
         cityLookupBoxLayout.addWidget(self.stateNameLabel, 1, 0)
         cityLookupBoxLayout.addWidget(self.stateLookupCombo, 1, 1)
-        cityLookupBoxLayout.addWidget(self.latitudeHeightLabel, 2, 0)
-        cityLookupBoxLayout.addWidget(self.latitudeHeight, 2, 1)
-        cityLookupBoxLayout.addWidget(self.longitudeWidthLabel, 3, 0)
-        cityLookupBoxLayout.addWidget(self.longitudeWidth, 3, 1)
-        cityLookupBoxLayout.addWidget(self.cityLookupButton, 4, 0, 1, 2)
+        cityLookupBoxLayout.addWidget(self.cityLookupButton, 2, 0, 1, 2)
 
         self.PreViewAddButton = QPushButton("Preview View", self)
         self.PreViewAddButton.clicked.connect(self.onPreViewButtonClicked)
@@ -662,8 +813,8 @@ class LectureMapApp(QMainWindow):
         self.ViewRemoveButton = QPushButton("Remove View", self)
         self.ViewRemoveButton.clicked.connect(self.onViewRemoveButtonClicked)
 
-        viewInputBox.addWidget(viewInputGroupBox, 0, 0, 5, 2)
-        viewInputBox.addWidget(cityLookupGroupBox, 5, 0, 5, 2)
+        viewInputBox.addWidget(cityLookupGroupBox, 0, 0, 5, 2)
+        viewInputBox.addWidget(viewInputGroupBox, 5, 0, 5, 2)
         viewInputBox.addWidget(self.PreViewAddButton, 10, 0, 1, 2)
         viewInputBox.addWidget(self.ViewAddButton, 11, 0, 1, 2)
         viewInputBox.addWidget(self.ViewRemoveButton, 12, 0, 1, 2)
@@ -813,15 +964,20 @@ class LectureMapApp(QMainWindow):
             )
 
     def onCityLookupButtonClicked(self):
-        lat, lon = self.get_coordinates('', self.cityName.text(), self.stateLookupCombo.currentText(), '')
-        self.viewName.setText(self.cityName.text())
-        self.viewLat.setText(str(lat))
-        self.viewLon.setText(str(lon))
-        self.viewLLCLat.setText(str(lat - float(self.latitudeHeight.text())/2))
-        self.viewLLCLon.setText(str(lon - float(self.longitudeWidth.text())/2))
-        self.viewURCLat.setText(str(lat + float(self.latitudeHeight.text())/2))
-        self.viewURCLon.setText(str(lon + float(self.longitudeWidth.text())/2))
+        try:
+            raw_address = self.get_address(self.cityName.text() + ', ' + self.stateLookupCombo.currentText())
+        except AttributeError:
+            self.create_msg_box("Error", "Not Found.\n\nAre you sure you entered the correct state?", 'warning')
+            return
+        self.viewName.setText(raw_address['name'])
+        self.viewLat.setText(str(raw_address['lat']))
+        self.viewLon.setText(str(raw_address['lon']))
+        self.viewLLCLat.setText(str(raw_address['boundingbox'][0]))
+        self.viewLLCLon.setText(str(raw_address['boundingbox'][2]))
+        self.viewURCLat.setText(str(raw_address['boundingbox'][1]))
+        self.viewURCLon.setText(str(raw_address['boundingbox'][3]))
         self.onPreViewButtonClicked()
+        return
 
     def onViewAddButtonClicked(self):
         lat = self.viewLat.text()
@@ -875,7 +1031,6 @@ def run_app():
     app = QApplication([])
     mainWin = LectureMapApp()
     mainWin.show()
-    # app.exec()
     sys.exit(app.exec())
 
 
