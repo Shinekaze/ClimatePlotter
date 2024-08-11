@@ -1,4 +1,4 @@
-from geopy.geocoders import Nominatim
+from geopy.geocoders import *
 import pandas as pd
 from mpl_toolkits.basemap import Basemap
 import numpy as np
@@ -7,566 +7,255 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 import sys
 import os
+import shutil
 
 matplotlib.use('QtAgg')
 from matplotlib.patches import Polygon
-# from matplotlib.collections import PatchCollection
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from PyQt6.QtWidgets import *
-from PyQt6.QtGui import QIcon
+from PySide6.QtWidgets import *
+from PySide6.QtGui import QIcon
+from PySide6.QtCore import *
 
 
-# from matplotlib.figure import Figure
+class AddressError(Exception):
+    '''
+    Exception class
+    '''
+    pass
+
 
 class LectureMapApp(QMainWindow):
+    """
+    A GUI application for visualizing and managing lecture and event data on a map.
+
+    The `LectureMapApp` class provides a user interface built with Pyside6 that allows users to interact with
+    event and view data stored in Excel files. Users can add, edit, remove, and plot lecture or event locations
+    on a map. The application supports custom views, allows for the import of event data, and provides the ability
+    to save and manage these views for future use.
+
+    Attributes:
+        excelFilePath (str): The file path to the main ClimatePlotter Excel document where event data is stored.
+        viewsFilePath (str): The file path to the Views Excel document where map view configurations are stored.
+        plotPath (str): The directory path where plot output files are saved.
+        df_views (pd.DataFrame): A DataFrame containing view data loaded from the Views Excel file.
+        stateList (list of str): A list of German states used for state selection and validation within the application.
+        canvas (QWidget): The canvas where map plots are rendered.
+        plotListWidget (QListWidget): A widget displaying the list of available views for selection.
+        nameEdit (QLineEdit): A text field for entering the name of the event or institution.
+        addressEdit (QLineEdit): A text field for entering the address of the event or institution.
+        cityEdit (QLineEdit): A text field for entering the city of the event or institution.
+        plzEdit (QLineEdit): A text field for entering the postal code (PLZ) of the event or institution.
+        stateCombo (QComboBox): A dropdown for selecting the state of the event or institution.
+        tableEdit (QLineEdit): A text field for entering the number of tables at the event.
+        participantEdit (QLineEdit): A text field for entering the number of participants at the event.
+        viewLat (QLineEdit): A text field for entering the latitude of the map view.
+        viewLon (QLineEdit): A text field for entering the longitude of the map view.
+        viewLLCLat (QLineEdit): A text field for entering the lower-left corner latitude of the map view.
+        viewLLCLon (QLineEdit): A text field for entering the lower-left corner longitude of the map view.
+        viewURCLat (QLineEdit): A text field for entering the upper-right corner latitude of the map view.
+        viewURCLon (QLineEdit): A text field for entering the upper-right corner longitude of the map view.
+        viewName (QLineEdit): A text field for entering the name of the map view.
+        df_events (pd.DataFrame): A DataFrame containing event data loaded from the ClimatePlotter Excel file.
+
+    Methods:
+        __init__(): Initializes the application, sets up file paths, loads initial data, and configures the user interface.
+        initUI(): Sets up the user interface components and layouts for the application.
+        read_views_file(file_path): Reads the views from the specified Excel file and returns them as a DataFrame.
+        read_excel_file(file_path): Reads event data from the specified Excel file and returns it as a DataFrame.
+        get_coordinates(city, state, plz, address=None): Retrieves the latitude and longitude coordinates for a given location.
+        plot_map(df_events, df_stats, plotPath, canvas, lat, lon, llc_lat, llc_lon, urc_lat, urc_lon, view_name, doSave=False): Plots the event data on a map.
+        onLookupAddressButtonClicked(): Handles the event when the 'Lookup Address' button is clicked.
+        onPreViewButtonClicked(): Handles the event when the 'Pre-View' button is clicked.
+        onViewAddButtonClicked(): Handles the event when the 'Add View' button is clicked.
+        onCityLookupButtonClicked(): Handles the event when the 'City Lookup' button is clicked.
+        onViewRemoveButtonClicked(): Handles the event when the 'Remove View' button is clicked.
+        recalculateStatistics(df_events, df_stats, lat=None, lon=None): Recalculates statistics for the events and updates the Excel file.
+        getPlotItem(): Retrieves the plot item from the DataFrame based on the currently selected item in the plot list widget.
+        create_msg_box(title, message, icon='information'): Creates and displays a message box with the specified title, message, and icon.
+        clearAll(): Clears all input fields in the user interface.
+        setupPlotListWidget(): Sets up and populates the plot list widget with available views.
+
+    """
     def __init__(self):
         super().__init__()
 
-        # self.excelFilePath = './Plotter_Output/ClimatePlotter.xlsx'
-        # self.plotPath = './Plotter_Output/'
         self.excelFilePath = os.path.join(os.path.dirname(__file__), 'Plotter_Output', 'ClimatePlotter.xlsx')
-        # self.excelFilePath = os.path.join('Plotter_Output', 'ClimatePlotter.xlsx')
+        self.viewsFilePath = os.path.join(os.path.dirname(__file__), 'Views.xlsx')
         self.plotPath = 'Plotter_Output'
-
-        self.radio_buttons = []
 
         self.setWindowTitle("Lecture Map Plotter")
         self.setGeometry(100, 100, 1200, 900)
 
-        self.germanyDict = {
-            'Deutschland': {
-                "lat_0": 51.1657,
-                "lon_0": 10.4515,
-                "llcrnrlon": 5.866,
-                "llcrnrlat": 47.2701,
-                "urcrnrlon": 15.0418,
-                "urcrnrlat": 55.0583
-            }
-        }
+        self.df_views = self.read_views_file(self.viewsFilePath)
 
-        self.stateDict = {
-            'Baden-Württemberg': {
-                "lat_0": 48.6616,
-                "lon_0": 9.3501,
-                "llcrnrlon": 7.511,
-                "llcrnrlat": 47.533,
-                "urcrnrlon": 10.491,
-                "urcrnrlat": 49.791
-            },
-            'Bayern': {
-                "lat_0": 48.9463,
-                "lon_0": 11.4039,
-                "llcrnrlon": 8.979,
-                "llcrnrlat": 47.270,
-                "urcrnrlon": 13.839,
-                "urcrnrlat": 50.564
-            },
-            'Berlin': {
-                "lat_0": 52.5200,
-                "lon_0": 13.4050,
-                "llcrnrlon": 13.088,
-                "llcrnrlat": 52.338,
-                "urcrnrlon": 13.761,
-                "urcrnrlat": 52.675
-            },
-            'Brandenburg': {
-                "lat_0": 52.4084,
-                "lon_0": 12.5625,
-                "llcrnrlon": 11.267,
-                "llcrnrlat": 51.359,
-                "urcrnrlon": 14.765,
-                "urcrnrlat": 53.558
-            },
-            'Bremen': {
-                "lat_0": 53.0793,
-                "lon_0": 8.8017,
-                "llcrnrlon": 8.480,
-                "llcrnrlat": 53.01,
-                "urcrnrlon": 9.0,
-                "urcrnrlat": 53.24
-            },
-            'Hamburg': {
-                "lat_0": 53.5511,
-                "lon_0": 9.9937,
-                "llcrnrlon": 9.731,
-                "llcrnrlat": 53.395,
-                "urcrnrlon": 10.325,
-                "urcrnrlat": 53.75
-            },
-            'Hessen': {
-                "lat_0": 50.6521,
-                "lon_0": 9.1624,
-                "llcrnrlon": 7.773,
-                "llcrnrlat": 49.396,
-                "urcrnrlon": 10.238,
-                "urcrnrlat": 51.657
-            },
-            'Mecklenburg-Vorpommern': {
-                "lat_0": 53.6127,
-                "lon_0": 12.4296,
-                "llcrnrlon": 10.593,
-                "llcrnrlat": 53.10,
-                "urcrnrlon": 14.429,
-                "urcrnrlat": 54.684
-            },
-            'Niedersachsen': {
-                "lat_0": 52.6367,
-                "lon_0": 9.8451,
-                "llcrnrlon": 6.533,
-                "llcrnrlat": 51.295,
-                "urcrnrlon": 11.597,
-                "urcrnrlat": 54.167
-            },
-            'Nordrhein-Westfalen': {
-                "lat_0": 51.4332,
-                "lon_0": 7.6616,
-                "llcrnrlon": 5.866,
-                "llcrnrlat": 50.322,
-                "urcrnrlon": 9.461,
-                "urcrnrlat": 52.530
-            },
-            'Rheinland-Pfalz': {
-                "lat_0": 49.9825,
-                "lon_0": 7.3090,
-                "llcrnrlon": 6.013,
-                "llcrnrlat": 48.971,
-                "urcrnrlon": 8.52,
-                "urcrnrlat": 50.941
-            },
-            'Saarland': {
-                "lat_0": 49.3965,
-                "lon_0": 6.9783,
-                "llcrnrlon": 6.35,
-                "llcrnrlat": 49.112,
-                "urcrnrlon": 7.42,
-                "urcrnrlat": 49.656
-            },
-            'Sachsen': {
-                "lat_0": 51.1045,
-                "lon_0": 13.2017,
-                "llcrnrlon": 11.872,
-                "llcrnrlat": 50.175,
-                "urcrnrlon": 15.041,
-                "urcrnrlat": 51.649
-            },
-            'Sachsen-Anhalt': {
-                "lat_0": 51.9715,
-                "lon_0": 11.4697,
-                "llcrnrlon": 10.569,
-                "llcrnrlat": 50.951,
-                "urcrnrlon": 13.2,
-                "urcrnrlat": 53.055
-            },
-            'Schleswig-Holstein': {
-                "lat_0": 54.2194,
-                "lon_0": 9.6961,
-                "llcrnrlon": 8.120,
-                "llcrnrlat": 53.359,
-                "urcrnrlon": 11.43,
-                "urcrnrlat": 55.058
-            },
-            'Thüringen': {
-                "lat_0": 50.8614,
-                "lon_0": 11.0522,
-                "llcrnrlon": 9.872,
-                "llcrnrlat": 50.204,
-                "urcrnrlon": 12.652,
-                "urcrnrlat": 51.637
-            }
-        }
-
-        self.cityDict = {
-            'Berlin': {
-                "plz": [
-                    '10115', '10117', '10119', '10179', '10315', '10317', '10318', '10319', '10365', '10367', '10369',
-                    '10405',
-                    '10407', '10409', '10435', '10437', '10439', '10551', '10553', '10555', '10557', '10559', '10585',
-                    '10587',
-                    '10589', '10623', '10625', '10627', '10629', '10707', '10709', '10711', '10713', '10715', '10717',
-                    '10719',
-                    '10777', '10779', '10781', '10783', '10785', '10787', '10789', '10823', '10825', '10827', '10829',
-                    '12043',
-                    '12045', '12047', '12049', '12051', '12053', '12055', '12057', '12059', '12099', '12101', '12103',
-                    '12105',
-                    '12107', '12109', '12157', '12159', '12161', '12163', '12165', '12167', '12169', '12203', '12205',
-                    '12207',
-                    '12209', '12247', '12249', '12277', '12279', '12305', '12307', '12309', '12347', '12349', '12351',
-                    '12353',
-                    '12355', '12357', '12359', '12435', '12437', '12439', '12459', '12487', '12489', '12524', '12526',
-                    '12527',
-                    '12557', '12559', '12587', '12589', '12619', '12621', '12623', '12627', '12629', '12679', '12681',
-                    '12683',
-                    '12685', '12687', '12689', '13051', '13053', '13055', '13057', '13059', '13086', '13088', '13089',
-                    '13125',
-                    '13127', '13129', '13156', '13158', '13159', '13187', '13189', '13347', '13349', '13351', '13353',
-                    '13355',
-                    '13357', '13359', '13403', '13405', '13407', '13409', '13435', '13437', '13439', '13465', '13467',
-                    '13469',
-                    '13503', '13505', '13507', '13509', '13581', '13585', '13591', '13597', '13599', '13627', '13629',
-                    '14050',
-                    '14052', '14053', '14055', '14057', '14059', '14089', '14109', '14129', '14131', '14163', '14165',
-                    '14167',
-                    '14169', '14193', '14195', '14197', '14199'
-                ],
-                "lat_0": 52.532,
-                "lon_0": 13.3922,
-                "llcrnrlon": 13.1055859,
-                "llcrnrlat": 52.3932541,
-                "urcrnrlon": 13.6266696,
-                "urcrnrlat": 52.6131758
-            },
-            'Hamburg': {
-                "plz": [
-                    '20095', '20097', '20099', '20144', '20146', '20148', '20149', '20249', '20251', '20253', '20255',
-                    '20257',
-                    '20259', '20354', '20355', '20357', '20359', '20457', '20459', '20535', '20537', '20539', '21029',
-                    '21031',
-                    '21033', '21035', '21037', '21039', '21073', '21075', '21077', '21079', '21107', '21109', '21129',
-                    '21147',
-                    '21149', '22041', '22043', '22045', '22047', '22049', '22081', '22083', '22085', '22087', '22089',
-                    '22111',
-                    '22113', '22115', '22117', '22119', '22143', '22145', '22147', '22149', '22159', '22175', '22177',
-                    '22179',
-                    '22297', '22299', '22301', '22303', '22305', '22307', '22309', '22335', '22337', '22339', '22359',
-                    '22391',
-                    '22393', '22395', '22397', '22399', '22415', '22417', '22419', '22453', '22455', '22457', '22459',
-                    '22523',
-                    '22525', '22527', '22529', '22547', '22549', '22559', '22587', '22589', '22605', '22607', '22609',
-                    '22761',
-                    '22763', '22765', '22767', '22769'
-                ],
-                "lat_0": 53.5544,
-                "lon_0": 9.9946,
-                "llcrnrlon": 9.8073217,
-                "llcrnrlat": 53.4457532,
-                "urcrnrlon": 10.2137762,
-                "urcrnrlat": 53.6817768
-            },
-            'München': {
-                "plz": [
-                    '80331', '80333', '80335', '80336', '80337', '80339', '80469', '80538', '80539', '80634', '80636',
-                    '80637',
-                    '80638', '80639', '80686', '80687', '80689', '80796', '80797', '80798', '80799', '80801', '80802',
-                    '80803',
-                    '80804', '80805', '80807', '80809', '80933', '80935', '80937', '80939', '80992', '80993', '80995',
-                    '80997',
-                    '80999', '81241', '81243', '81245', '81247', '81369', '81371', '81373', '81375', '81377', '81379',
-                    '81475',
-                    '81476', '81477', '81479', '81539', '81541', '81543', '81545', '81547', '81549', '81667', '81669',
-                    '81671',
-                    '81673', '81675', '81677', '81679', '81735', '81737', '81739', '81825', '81827', '81829', '81925',
-                    '81927',
-                    '81929'
-                ],
-                "lat_0": 48.1351,
-                "lon_0": 11.5820,
-                "llcrnrlon": 11.360,
-                "llcrnrlat": 48.061,
-                "urcrnrlon": 11.722,
-                "urcrnrlat": 48.248
-            },
-            'Köln': {
-                "plz": [
-                    '50667', '50668', '50670', '50672', '50674', '50676', '50677', '50678', '50679', '50733', '50735',
-                    '50737',
-                    '50739', '50765', '50767', '50769', '50823', '50825', '50827', '50829', '50858', '50859', '50931',
-                    '50933',
-                    '50935', '50937', '50939', '50968', '50969', '50996', '50997', '50999', '51061', '51063', '51065',
-                    '51067',
-                    '51069', '51103', '51105', '51107', '51109', '51143', '51145', '51147', '51149', '51467'
-                ],
-                "lat_0": 50.9384,
-                "lon_0": 6.9543,
-                "llcrnrlon": 6.8824458,
-                "llcrnrlat": 50.8910803,
-                "urcrnrlon": 7.0653033,
-                "urcrnrlat": 51.0145577
-            },
-            'Frankfurt': {
-                "plz": [
-                    '60308', '60311', '60313', '60314', '60316', '60318', '60320', '60322', '60323', '60325', '60326',
-                    '60327',
-                    '60329', '60385', '60386', '60388', '60389', '60431', '60433', '60435', '60437', '60438', '60439',
-                    '60486',
-                    '60487', '60488', '60489', '60528', '60529', '60549', '60594', '60596', '60598', '60599', '65929',
-                    '65931',
-                    '65933', '65934', '65936'
-                ],
-                "lat_0": 50.1167,
-                "lon_0": 8.6833,
-                "llcrnrlon": 8.4888008,
-                "llcrnrlat": 50.0133053,
-                "urcrnrlon": 8.7834831,
-                "urcrnrlat": 50.2164379
-            },
-            'Stuttgart': {
-                "plz": [
-                    '70173', '70174', '70176', '70178', '70180', '70182', '70184', '70186', '70188', '70190', '70191',
-                    '70192',
-                    '70193', '70195', '70197', '70199', '70327', '70329', '70372', '70374', '70376', '70378', '70435',
-                    '70437',
-                    '70439', '70469', '70499', '70563', '70565', '70567', '70569', '70597', '70599', '70619', '70629'
-                ],
-                "lat_0": 48.7667,
-                "lon_0": 9.1833,
-                "llcrnrlon": 9.1343004,
-                "llcrnrlat": 48.7545509,
-                "urcrnrlon": 9.2414900,
-                "urcrnrlat": 48.8204811
-            },
-            'Düsseldorf': {
-                "plz": [
-                    '40210', '40211', '40212', '40213', '40215', '40217', '40219', '40221', '40223', '40225', '40227',
-                    '40229',
-                    '40231', '40233', '40235', '40237', '40239', '40468', '40470', '40472', '40474', '40476', '40477',
-                    '40479',
-                    '40489', '40545', '40547', '40549', '40589', '40591', '40593', '40595', '40597', '40599', '40625',
-                    '40627',
-                    '40629'
-                ],
-                "lat_0": 51.2216,
-                "lon_0": 6.7898,
-                "llcrnrlon": 6.6985260,
-                "llcrnrlat": 51.1237393,
-                "urcrnrlon": 6.9201588,
-                "urcrnrlat": 51.3401162
-            },
-            'Dortmund': {
-                "plz": [
-                    '44135', '44137', '44139', '44141', '44143', '44145', '44147', '44149', '44225', '44227', '44229',
-                    '44263',
-                    '44265', '44267', '44269', '44287', '44289', '44309', '44319', '44328', '44329', '44339', '44357',
-                    '44359',
-                    '44369', '44379', '44388'
-                ],
-                "lat_0": 51.5125,
-                "lon_0": 7.477,
-                "llcrnrlon": 7.3189002,
-                "llcrnrlat": 51.4203522,
-                "urcrnrlon": 7.6285024,
-                "urcrnrlat": 51.5902729
-            },
-            'Essen': {
-                "plz": [
-                    '45127', '45128', '45130', '45131', '45133', '45134', '45136', '45138', '45139', '45141', '45143',
-                    '45144',
-                    '45145', '45147', '45149', '45219', '45239', '45257', '45259', '45276', '45277', '45279', '45289',
-                    '45307',
-                    '45309', '45326', '45327', '45329', '45355', '45356', '45357', '45359'
-                ],
-                "lat_0": 51.4536,
-                "lon_0": 7.0102,
-                "llcrnrlon": 6.9009234,
-                "llcrnrlat": 51.3477941,
-                "urcrnrlon": 7.1307693,
-                "urcrnrlat": 51.5340233
-            },
-            'Leipzig': {
-                "plz": [
-                    '04109'
-                ],
-                "lat_0": 51.342,
-                "lon_0": 12.375,
-                "llcrnrlon": 12.2465782,
-                "llcrnrlat": 51.2638967,
-                "urcrnrlon": 12.5297905,
-                "urcrnrlat": 51.4002769
-            },
-            'Bremen': {
-                "plz": [
-                    '28195', '28197', '28199', '28201', '28203', '28205', '28207', '28209', '28211', '28213', '28215',
-                    '28217',
-                    '28219', '28237', '28239', '28259', '28277', '28279', '28307', '28309', '28325', '28327', '28329',
-                    '28355',
-                    '28357', '28359', '28717', '28719', '28755', '28757', '28759', '28777', '28779'
-                ],
-                "lat_0": 53.0889,
-                "lon_0": 8.7906,
-                "llcrnrlon": 8.4947922,
-                "llcrnrlat": 53.0221694,
-                "urcrnrlon": 8.9870293,
-                "urcrnrlat": 53.2204517
-            },
-            'Dresden': {
-                "plz": [
-                    '01067', '01069', '01097', '01099', '01108', '01109', '01127', '01129', '01139', '01156', '01157',
-                    '01159',
-                    '01169', '01187', '01189', '01217', '01219', '01237', '01239', '01257', '01259', '01277', '01279',
-                    '01307',
-                    '01309', '01324', '01326', '01328', '01462', '01465', '01478'
-                ],
-                "lat_0": 51.05,
-                "lon_0": 13.75,
-                "llcrnrlon": 13.5754990,
-                "llcrnrlat": 50.9758015,
-                "urcrnrlon": 13.9326637,
-                "urcrnrlat": 51.1658162
-            },
-            'Hanover': {
-                "plz": [
-                    '30159', '30161', '30163', '30165', '30167', '30169', '30171', '30173', '30175', '30177', '30179',
-                    '30419',
-                    '30449', '30451', '30453', '30455', '30457', '30459', '30519', '30521', '30539', '30559', '30625',
-                    '30627',
-                    '30629', '30655', '30657', '30659', '30669'
-                ],
-                "lat_0": 52.3736,
-                "lon_0": 9.7371,
-                "llcrnrlon": 9.6256456,
-                "llcrnrlat": 52.3076533,
-                "urcrnrlon": 9.9171856,
-                "urcrnrlat": 52.4484497
-            },
-            'Nürnberg': {
-                "plz": [
-                    '90402', '90403', '90408', '90409', '90411', '90419', '90425', '90427', '90429', '90431', '90439',
-                    '90441',
-                    '90443', '90449', '90451', '90453', '90455', '90459', '90461', '90469', '90471', '90473', '90475',
-                    '90478',
-                    '90480', '90482', '90489', '90491'
-                ],
-                "lat_0": 49.4504,
-                "lon_0": 11.0778,
-                "llcrnrlon": 10.9940730,
-                "llcrnrlat": 49.3428032,
-                "urcrnrlon": 11.1882136,
-                "urcrnrlat": 49.5367797
-            },
-            'Duisberg': {
-                "plz": [
-                    '47198'
-                ],
-                "lat_0": 51.4499,
-                "lon_0": 6.6901,
-                "llcrnrlon": 6.6300531,
-                "llcrnrlat": 51.3300235,
-                "urcrnrlon": 6.8401972,
-                "urcrnrlat": 51.5621746
-            },
-            'Bochum': {
-                "plz": [
-                    '44787', '44789', '44791', '44793', '44795', '44797', '44799', '44801', '44803', '44805', '44807',
-                    '44809',
-                    '44866', '44867', '44869', '44879', '44892', '44894'
-                ],
-                "lat_0": 51.4803,
-                "lon_0": 7.2183,
-                "llcrnrlon": 7.1182351,
-                "llcrnrlat": 51.4062166,
-                "urcrnrlon": 7.3439578,
-                "urcrnrlat": 51.5315915
-            },
-            'Wuppertal': {
-                "plz": [
-                    '42103', '42105', '42107', '42109', '42111', '42113', '42115', '42117', '42119', '42275', '42277',
-                    '42279',
-                    '42281', '42283', '42285', '42287', '42289', '42327', '42329', '42349', '42369', '42389', '42399'
-                ],
-                "lat_0": 51.2569,
-                "lon_0": 7.1505,
-                "llcrnrlon": 7.0911096,
-                "llcrnrlat": 51.2202031,
-                "urcrnrlon": 7.2393535,
-                "urcrnrlat": 51.2977357
-            },
-            'Bielefeld': {
-                "plz": [
-                    '33602', '33604', '33605', '33607', '33609', '33611', '33613', '33615', '33617', '33619', '33647',
-                    '33649',
-                    '33659', '33689', '33699', '33719', '33729', '33739'
-                ],
-                "lat_0": 52.0245,
-                "lon_0": 8.5326,
-                "llcrnrlon": 8.4680291,
-                "llcrnrlat": 51.9735205,
-                "urcrnrlon": 8.6149822,
-                "urcrnrlat": 52.0601791
-            },
-            'Bonn': {
-                "plz": [
-                    '53111', '53113', '53115', '53117', '53119', '53121', '53123', '53125', '53127', '53129', '53173',
-                    '53175',
-                    '53177', '53179', '53225', '53227', '53229'
-                ],
-                "lat_0": 50.7362,
-                "lon_0": 7.1002,
-                "llcrnrlon": 7.0315679,
-                "llcrnrlat": 50.6815715,
-                "urcrnrlon": 7.1774806,
-                "urcrnrlat": 50.7640391
-            },
-            'Münster': {
-                "plz": [
-                    48079
-                ],
-                "lat_0": 51.9625,
-                "lon_0": 7.6256,
-                "llcrnrlon": 7.480,
-                "llcrnrlat": 51.892,
-                "urcrnrlon": 7.770,
-                "urcrnrlat": 52.042
-            },
-            'Karlsruhe': {
-                "plz": [
-                    '76131', '76133', '76135', '76137', '76139', '76149', '76185', '76187', '76189', '76199', '76227',
-                    '76228',
-                    '76229'
-                ],
-                "lat_0": 49.0069,
-                "lon_0": 8.4037,
-                "llcrnrlon": 8.282,
-                "llcrnrlat": 48.935,
-                "urcrnrlon": 8.524,
-                "urcrnrlat": 49.073
-            }
-        }
+        self.stateList = [
+            'Baden-Württemberg',
+            'Bayern',
+            'Berlin',
+            'Brandenburg',
+            'Bremen',
+            'Hamburg',
+            'Hessen',
+            'Mecklenburg-Vorpommern',
+            'Niedersachsen',
+            'Nordrhein-Westfalen',
+            'Rheinland-Pfalz',
+            'Saarland',
+            'Sachsen',
+            'Sachsen-Anhalt',
+            'Schleswig-Holstein',
+            'Thüringen'
+        ]
 
         self.initUI()
 
     def get_address(self, name):
+        '''
+        Uses OSM's Nominatim to get a German address for a particular search name.
+        country_codes set to de to limit search to Germany.
+        addressdetails set to True to get more information about the address OSM has for the search object
+
+        Args:
+            name (str): Search string, ex: "HKA" or "Karlsruhe Institute of Technology".
+
+        Returns:
+            dict: geopy.location.Location.raw - dictionary containing unparsed location information returned
+                from Nominatim.
+        '''
         geolocator = Nominatim(user_agent="http")
-        location = geolocator.geocode(name + ", Germany")
-        if location:
-            return location.address
+        location = geolocator.geocode(name, country_codes="de", addressdetails=True)
+        if location is not None:
+            return location.raw
         else:
+            self.create_msg_box("Address Error",
+                                f"Error: {'Bad search results returned'} \n\n"
+                                f"{name} returned no results.",
+                                'warning')
             return None
 
-    def get_coordinates(self, address, city_name, state_name, plz_code):
+    def get_coordinates(self, city_name, state_name, plz_code, address=''):
+        '''
+        Uses OSM's Nominatim to get latitude and longitude coordinates for the search object
+
+        Args:
+           city_name (str): City to be searched. Ex: "Regensburg"
+           state_name (str): State to be searched. Ex: "Bayern"
+           plz_code (str): Post code. Ex: "76139"
+           address (str): Street Address of search object. Defaults to ''.
+
+        Returns:
+            str, str: latitude and longitude from Nominatim's location dict.
+        '''
         geolocator = Nominatim(user_agent="http")
-        location = geolocator.geocode(address + ", " + city_name + ", " + state_name + ", " + plz_code + ", Germany")
+        location = geolocator.geocode(
+            address + ", " + city_name + ", " + state_name + ", " + str(plz_code) + ", Germany")
         if location:
             return location.latitude, location.longitude
         else:
             return None, None
 
-    def read_excel(self, file_path):
+    def read_excel_file(self, file_path):
+        '''
+        Reads the ClimatePlotter excel file, parses Events and Stats, or if they do not exist, creates them.
+        If the ClimatePlotter excel document does not exist, creates one.
+
+        Args:
+            file_path (str): Where to find the excel sheet
+
+        Returns:
+            pd.Dataframe, pd.Dataframe: Events dataframe, Stats dataframe
+        '''
         try:
-            df = pd.read_excel(file_path)
-            return df
-        except pd.errors.EmptyDataError:
-            df = pd.DataFrame(
-                columns=['Name', 'City', 'State', 'PLZ', 'Latitude', 'Longitude', 'EventCount', 'CityEventTotal',
-                         'TotalTables', 'TotalParticipants'])
-            return df
+            xl = pd.ExcelFile(file_path)
+            if len(xl.sheet_names) > 1 and 'Events' in xl.sheet_names and 'Stats' in xl.sheet_names:
+                df_events = xl.parse('Events')
+                df_stats = xl.parse('Stats')
+            else:
+                if 'Events' not in xl.sheet_names:
+                    df_events = pd.DataFrame(
+                        columns=['Datum', 'Hochschule', 'Adresse', 'Stadt', 'Bundesland', 'PLZ', 'Tische',
+                                 'Teilnehmer'])
+                    df_stats = pd.DataFrame(columns=['Hochschule', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                                                     'EventCount', 'CityEventTotal', 'TotalTables',
+                                                     'TotalParticipants', 'CityParticipantsTotal'])
+                    msgText = "Events sheet not found, Stats reset"
+                elif 'Stats' not in xl.sheet_names:
+                    df_events = xl.parse('Events')
+                    df_stats = pd.DataFrame(columns=['Hochschule', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                                                     'EventCount', 'CityEventTotal', 'TotalTables',
+                                                     'TotalParticipants', 'CityParticipantsTotal'])
+                    msgText = "Stats sheet not found, created new from values in Events sheet"
+                    self.recalculateStatistics(df_events, df_stats)
+                self.create_msg_box("Sheet Not Found", msgText, 'warning')
+            return df_events, df_stats
+        except FileNotFoundError:
+            df_events = pd.DataFrame(
+                columns=['Datum', 'Hochschule', 'Adresse', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
+            df_stats = pd.DataFrame(columns=['Hochschule', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                                             'EventCount', 'CityEventTotal', 'TotalTables',
+                                             'TotalParticipants', 'CityParticipantsTotal'])
+            with pd.ExcelWriter(self.excelFilePath) as writer:
+                df_events.to_excel(writer, sheet_name='Events', index=False)
+                df_stats.to_excel(writer, sheet_name='Stats', index=False)
+                self.create_msg_box("File Not Found",
+                                    "ClimatePlotter.xlsx not found in the Plotter_Output directory, created new file",
+                                    'warning')
+            return df_events, df_stats
 
-    def update_excel(self, file_path, name, address, city, state, plz, lat, lon, tables=0,
+    def update_excel(self, file_path, date, name, address, city, state, plz, lat, lon, tables=0,
                      participants=0):
-        df = pd.read_excel(file_path)
-        school_exists = ((df['Name'] == name) & (df['City'] == city) & (df['State'] == state)).any().any()
-        if school_exists:
-            df.loc[(df['Name'] == name) & (df['City'] == city) & (df['State'] == state), 'EventCount'] += 1
-            df.loc[(df['Name'] == name) & (df['City'] == city) & (df['State'] == state), 'TotalTables'] += int(tables)
-            df.loc[(df['Name'] == name) & (df['City'] == city) & (df['State'] == state), 'TotalParticipants'] += int(
-                participants)
-        else:
-            df.loc[len(df.index) + 1] = [name, address, city, state, plz, lat, lon, 1, -1, int(tables),
-                                         int(participants)]
-        city_event_total = df[df['City'] == city]['EventCount'].sum()
-        df.loc[df['City'] == city, 'CityEventTotal'] = int(city_event_total)
-        df.to_excel(file_path, index=False)
-        return df
+        """
+        Writes the new rows of data to the ClimatePlotter Excel document.
 
-    def plot_map(self, df, save_path, canvas, lat, lon, llc_lat, llc_lon, urc_lat, urc_lon, view='Deutschland'):
+        Args:
+            file_path (str): The path to the ClimatePlotter document.
+            date (str): The date of the event being added.
+            name (str): The name of the school or university.
+            address (str): The street address of the school or university.
+            city (str): The city of the school or university.
+            state (str): The state of the school or university.
+            plz (str): The postal code of the school or university.
+            lat (str): [UNUSED] The latitude coordinates of the school or university.
+            lon (str): [UNUSED] The longitude coordinates of the school or university.
+            tables (int): The number of tables at the event.
+            participants (int): The total number of participants at the event.
+
+        Returns:
+            bool: A flag indicating whether the write to the Excel document was successful.
+        """
+        df_events, df_stats = self.read_excel_file(file_path)
+        df_events.loc[len(df_events.index) + 1] = [date, name, address, city, state, str(plz), int(tables),
+                                                   int(participants)]
+        try:
+            with pd.ExcelWriter(self.excelFilePath) as writer:
+                df_events.to_excel(writer, sheet_name='Events', index=False)
+                df_stats.to_excel(writer, sheet_name='Stats', index=False)
+            return True
+        except OSError:
+            return False
+
+    def plot_map(self, df_events, df_stats, save_path, canvas, lat, lon, llc_lat, llc_lon, urc_lat, urc_lon,
+                 view='Deutschland', doSave=False):
+        '''
+        Map plotting tool using Basemap.
+
+        Args:
+            df_events (pd.Dataframe): [UNUSED] Dataframe of events
+            df_stats (pd.Dataframe): Dataframe of stats relating to how many events a school/city have held.
+            save_path (str): Location to save the generated map image.
+            canvas (FigureCanvasQTAgg object): Matplotlib backend object as a plot canvas for drawing the map
+            lat (float): [UNUSED] Latitude coordinate of plot center.
+            lon (float): [UNUSED] Longitude coordinate of plot center
+            llc_lat (float): Latitude - Lower left corner of view window
+            llc_lon (float): Longitude - Lower left corner of view window
+            urc_lat (float): Latitude - Upper right corner of view window
+            urc_lon (float): Longitude - Upper right corner of view window
+            view (str): Name of the view, used for title of saved map image. Defaults to 'Deutschland'
+            doSave (bool): Triggers the saving of the plot image. Defaults to False
+
+        Returns:
+            None
+        '''
         canvas.figure.clf()
         ax = canvas.figure.add_subplot(111)
         '''
@@ -574,18 +263,10 @@ class LectureMapApp(QMainWindow):
         projection: 'merc' (Mercator), 'cyl' (Cylindrical Equidistant), 'mill' (Miller Cylindrical), 'gall' (Gall Stereographic Cylindrical), 'cea' (Cylindrical Equal Area), 'lcc' (Lambert Conformal), 'tmerc' (Transverse Mercator), 'omerc' (Oblique Mercator), 'nplaea' (North-Polar Lambert Azimuthal), 'npaeqd' (North-Polar Azimuthal Equidistant), 'nplaea' (South-Polar Lambert Azimuthal), 'spaeqd' (South-Polar Azimuthal Equidistant), 'aea' (Albers Equal Area), 'stere' (Stereographic), 'robin' (Robinson), 'eck4' (Eckert IV), 'eck6' (Eckert VI), 'kav7' (Kavrayskiy VII), 'mbtfpq' (McBryde-Thomas Flat-Polar Quartic), 'sinu' (Sinusoidal), 'gall' (Gall Stereographic Cylindrical), 'hammer' (Hammer), 'moll' (Mollweid
         espg: 3857 (Web Mercator)
         '''
-        m = Basemap(resolution='h', lat_0=lat, lon_0=lon, llcrnrlon=llc_lon, llcrnrlat=llc_lat,
+        m = Basemap(resolution='h', lat_0=(urc_lat - llc_lat) / 2, lon_0=(urc_lon - llc_lon) / 2, llcrnrlon=llc_lon,
+                    llcrnrlat=llc_lat,
                     urcrnrlon=urc_lon, urcrnrlat=urc_lat, epsg=3857)
         m.drawcountries()
-
-        '''
-        https://gdz.bkg.bund.de/index.php/default/webdienste.html
-        https://gdz.bkg.bund.de/index.php/default/webdienste/basemap-webdienste/wms-basemapde-webraster-wms-basemapde-webraster.html
-        de_basemapde_web_raster_farbe
-        de_basemapde_web_raster_grau
-        '''
-        # wms_server = 'https://sgx.geodatenzentrum.de/wms_basemapde?SERVICE=WMS&Request=GetCapabilities'
-        # m.wmsimage(wms_server, layers=["de_basemapde_web_raster_farbe"], verbose=True)
 
         '''
         https://gdz.bkg.bund.de/index.php/default/wmts-topplusopen-wmts-topplus-open.html
@@ -597,60 +278,101 @@ class LectureMapApp(QMainWindow):
         web_light_grau
         '''
         wms_server = 'https://sgx.geodatenzentrum.de/wms_topplus_open?request=GetCapabilities&service=wms'
-        m.wmsimage(wms_server, layers=["web"], verbose=True)
+        m.wmsimage(wms_server, layers=["web_light"], verbose=False)
 
         m.drawcoastlines()
-        if view in self.cityDict:
-            df1 = df.loc[df['City'] == view].reset_index(drop=True)
-            df_max = max(df1['TotalParticipants'])
-            for k, d in df1.iterrows():
-                msize = d['TotalParticipants'] * 5
-                if msize > 200:
-                    msize = 200
-                col = cm.gist_rainbow(d['TotalParticipants'] / df_max)
-                x, y = m(d['Longitude'], d['Latitude'])
-                ax.scatter(x, y, label=k, s=msize, color=col)
-        else:
+        if view == 'Deutschland' or view in self.stateList:
             '''
-            Draw the German States
+            Handle drawing Germany or the states
             '''
             shapePath = os.path.join(os.path.dirname(__file__), 'shapefiles', 'DEU_adm1')
             m.readshapefile(shapePath, 'areas')
-            # m.readshapefile('./shapefiles/DEU_adm1', 'areas')
             df_poly = pd.DataFrame(columns=['shapes', 'area'])
             for info, shape in zip(m.areas_info, m.areas):
                 shape_array = np.array(shape)
                 df_poly.loc[len(df_poly.index) + 1] = [Polygon(shape_array), info['NAME_1']]
 
-            df1 = df.groupby('CityEventTotal')
-            colors = iter(cm.gnuplot(np.linspace(0, 1, len(df1.groups))))
+            df1 = df_stats.groupby('CityParticipantsTotal')
+            colors = iter(cm.winter(np.linspace(1, 0, len(df1.groups))))
 
-            for k, d in df1:
-                msize = k * 10
-                if msize > 50:
-                    msize = 50
-                x, y = m(d['Longitude'], d['Latitude'])
-                ax.scatter(x, y, label=k, s=msize, color=next(colors))
-        save_path = os.path.join(os.path.dirname(__file__), save_path, f'{pd.Timestamp.now().strftime("%Y-%m-%d_H%HM%MS%S")}_{view}.png')
-        # save_path = save_path + f'{pd.Timestamp.now().strftime("%Y-%m-%d_%H-%M-%S")}_{view}.png'
-        plt.savefig(save_path, format='png', dpi=300)
+            for group_cluster, data in df1:
+                msize = group_cluster * 5
+                if msize > 100:
+                    msize = 100
+                x, y = m(data['Longitude'], data['Latitude'])
+                ax.scatter(x, y, label=group_cluster, marker='o', s=msize, color=next(colors))
+        else:
+            '''
+            Handle drawing the cities
+            '''
+            df1 = df_stats.loc[df_stats['Stadt'] == view].reset_index(drop=True)
+            if df1.empty:
+                pass
+            else:
+                df_max = max(df1['TotalParticipants'])
+                for group_cluster, data in df1.iterrows():
+                    msize = data['TotalParticipants'] * 5
+                    if msize > 200:
+                        msize = 200
+                    col = cm.winter(data['TotalParticipants'] / df_max)
+                    x, y = m(data['Longitude'], data['Latitude'])
+                    ax.scatter(x, y, label=group_cluster, marker='o', s=msize, color=col)
         canvas.draw()
-
+        if doSave:
+            save_path = os.path.join(os.path.dirname(__file__), save_path,
+                                     f'{view}.png')
+            plt.savefig(save_path, format='png', dpi=300)
 
     def drawInitialMap(self):
-        df_fresks = self.read_excel(self.excelFilePath)
-        self.plot_map(df_fresks,
-                 self.plotPath,
-                 self.canvas,
-                 self.germanyDict['Deutschland']['lat_0'],
-                 self.germanyDict['Deutschland']['lon_0'],
-                 self.germanyDict['Deutschland']['llcrnrlat'],
-                 self.germanyDict['Deutschland']['llcrnrlon'],
-                 self.germanyDict['Deutschland']['urcrnrlat'],
-                 self.germanyDict['Deutschland']['urcrnrlon']
-                 )
+        '''
+        Function to draw the initial map during UI initialization. Reads the ClimatePlotter excel document
+        to add any existing events.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        '''
+        df_events, df_stats = self.read_excel_file(self.excelFilePath)
+        self.plot_map(df_events,
+                      df_stats,
+                      self.plotPath,
+                      self.canvas,
+                      self.df_views.loc[self.df_views['View'] == 'Deutschland']['lat_0'],
+                      self.df_views.loc[self.df_views['View'] == 'Deutschland']['lon_0'],
+                      self.df_views.loc[self.df_views['View'] == 'Deutschland']['llcrnrlat'],
+                      self.df_views.loc[self.df_views['View'] == 'Deutschland']['llcrnrlon'],
+                      self.df_views.loc[self.df_views['View'] == 'Deutschland']['urcrnrlat'],
+                      self.df_views.loc[self.df_views['View'] == 'Deutschland']['urcrnrlon']
+                      )
+
+    def read_views_file(self, file_path):
+        '''
+        Function to read the existing view window coordinates from the views excel file.
+
+        Args:
+            file_path (str): Path to the Views excel file, usually found in the root directory.
+        Returns:
+            None
+
+        '''
+        return pd.read_excel(file_path)
 
     def addExcelFiles(self):
+        '''
+        Opens a dialog box, allowing the user to select input excel documents containing new events to be
+        included in the running statistics. Files are added to the bulkImportList, which shows up in the
+        list widget.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        '''
         dialog = QFileDialog()
         dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
         dialog.setNameFilter("Excel files (*.xlsx)")
@@ -660,98 +382,832 @@ class LectureMapApp(QMainWindow):
                 self.bulkImportList.addItem(fileName)
 
     def removeExcelFiles(self):
-        self.bulkImportList.takeItem(self.bulkImportList.currentRow())
+        '''
+        Allows the user to remove files from the bulkImportList, such as if they were added in error.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        '''
+        try:
+            self.bulkImportList.takeItem(self.bulkImportList.currentRow())
+        except OSError:
+            self.create_msg_box("File Error", "Error in removing files", 'warning')
 
     def clearExcelFiles(self):
+        '''
+        Clears the bulkImportList completely.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        '''
         self.bulkImportList.clear()
 
+    def acceptBulkImport(self):
+        '''
+        Accept the import. Used in the import popup showing the file data vs the OSM data.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        '''
+        self.dialogBox.accept()
+        self.dialogBox.close()
+
+    def rejectBulkImport(self):
+        '''
+        Reject the import. Used in the import popup showing the file data vs the OSM data.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        '''
+        self.dialogBox.reject()
+        self.dialogBox.close()
+
+    def validate_fields(self):
+        '''
+        Validation of data fields. If all fields are filled, enable the button associated with
+        acceptBulkImport
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        '''
+        if (self.dateEdit.text() and
+                self.nameEdit.text() and
+                self.addressEdit.text() and
+                self.cityEdit.text() and
+                self.plzEdit.text() and
+                self.tableEdit.value() > 0 and
+                self.participantEdit.value() > 0):
+            self.buttonBox.button(QDialogButtonBox.StandardButton.Ok).setEnabled(True)
+        else:
+            self.buttonBox.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
+
     def bulkImportExcelFiles(self):
+        '''
+        Iterates through the bulkImportList/list widget, reads in the rows of each excel input document.
+        Validates the data for completeness. Appends the data to the Events and Stats dataframes, calculates
+        statistics and plots the results.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        '''
+        importedData = []
+
         for i in reversed(range(self.bulkImportList.count())):
             bulkFilePath = self.bulkImportList.item(i).text()
+
+            # Load the Excel file into a DataFrame
             df = pd.read_excel(bulkFilePath)
-            df = df.fillna('')  # Replace NaN with empty string
+
+            # Check for empty fields in any row
+            if df.isnull().any(axis=1).any():
+                self.create_msg_box(
+                    "Validation Error",
+                    f"File '{bulkFilePath.split('/')[-1]}' contains rows with empty fields.\nThis file will be skipped.",
+                    'warning'
+                )
+                importedData.append((bulkFilePath, i, "Empty Fields"))
+                continue
+
+            # Fill NaN values with empty strings to avoid issues later
+            df = df.fillna('')
+
             for index, row in df.iterrows():
-                date = row['Datum']
-                time = row['Uhrzeit']
-                name = row['Schul/Uni']
-                address = str(row['Adresse'])
-                city = str(row['Stadt'])
-                state = str(row['Bundesland'])
-                plzCode = str(row['PLZ'])
-                table = str(row['Tische'])
-                participant = str(row['Teilnehmer'])
-                latitude, longitude = self.get_coordinates(address, city, state, plzCode)
-                self.update_excel(self.excelFilePath, name, address, city, state, plzCode, latitude, longitude, table, participant)
-            if os.path.exists(bulkFilePath):
-                os.remove(bulkFilePath)
-            self.bulkImportList.takeItem(i)
+                if not self.validate_essential_fields(row, bulkFilePath, index):
+                    importedData.append((bulkFilePath, i, index))
+                    continue
+
+                plz = self.get_valid_plz(row, bulkFilePath, index)
+                if plz is None:
+                    importedData.append((bulkFilePath, i, index))
+                    continue
+
+                tables, participants = self.get_valid_table_participants(row, bulkFilePath, index)
+                if tables is None or participants is None:
+                    importedData.append((bulkFilePath, i, index))
+                    continue
+
+                raw_address = self.get_address_from_row(row, plz, bulkFilePath, index)
+                if raw_address is None:
+                    importedData.append((bulkFilePath, i, index))
+                    continue
+
+                self.process_and_display_dialog(row, raw_address, bulkFilePath, index, tables, participants)
+
+        self.cleanup_imported_files(importedData)
+
+        df_events, df_stats = self.read_excel_file(self.excelFilePath)
+        df_events = df_events.fillna('')  # Replace NaN with empty string
+        df_stats = df_stats.fillna('')  # Replace NaN with empty string
+        self.recalculateStatistics(df_events, df_stats)
         self.drawInitialMap()
 
-    def onLookupAddressButtonClicked(self):
+    def validate_essential_fields(self, row, bulkFilePath, index):
+        '''
+        Validates the data from the current row of the input excel document to ensure that key data is available.
+        Without this data, Nominatim's search will return None, making it impossible to plot.
+
+        Args:
+            row (dict): Current row from the excel document
+            bulkFilePath (str): Path to the current excel document
+            index (int): Row index of the current row
+
+        Returns:
+            bool: Returns false if fields are missing, else returns true
+
+        '''
+
+        required_fields = ['Hochschule', 'Stadt', 'Bundesland']
+        missing_fields = [field for field in required_fields if not row[field]]
+
+        if missing_fields:
+            self.create_msg_box(
+                "Validation Error",
+                f"Missing essential information in file: {bulkFilePath.split('/')[-1]}, Line: {index + 1}. "
+                f"Required fields: {', '.join(missing_fields)}.",
+                'warning'
+            )
+            return False
+        return True
+
+    def get_valid_plz(self, row, bulkFilePath, index):
+        '''
+        Validates the post code from the current row of the input excel document.
+
+        Args:
+           row (dict): Current row from the excel document
+           bulkFilePath (str): Path to the current excel document
+           index (int): Row index of the current row
+
+        Returns:
+            str or None: If the post code exists, returns the post code as a string. If the post code is invalid,
+                returns None. If the post code does not exist, returns empty string ''.
+
+        '''
+        if row['PLZ']:
+            try:
+                return str(int(row['PLZ']))
+            except ValueError:
+                self.create_msg_box(
+                    "Validation Error",
+                    f"Invalid PLZ value in file: {bulkFilePath.split('/')[-1]}, Line: {index + 1}.",
+                    'warning'
+                )
+                return None
+        return ''
+
+    def get_valid_table_participants(self, row, bulkFilePath, index):
+        '''
+        Validates the number of tables and participants.
+
+        Args:
+           row (dict): Current row from the excel document
+           bulkFilePath (str): Path to the current excel document
+           index (int): Row index of the current row
+
+        Returns:
+            int, int or None, None: If tables and participants are positive and non-zero, returns the
+                integer values. If there's a value error, returns None for each.
+
+        '''
+        try:
+            tables = int(row['Tische'])
+            participants = int(row['Teilnehmer'])
+            if tables < 0 or participants < 0:
+                raise ValueError("Tables or Participants cannot be negative.")
+            return tables, participants
+        except (ValueError, KeyError):
+            self.create_msg_box(
+                "Validation Error",
+                f"Invalid table or participant values in file: {bulkFilePath.split('/')[-1]}, Line: {index + 1}.",
+                'warning'
+            )
+            return None, None
+
+    def get_address_from_row(self, row, plz, bulkFilePath, index):
+        '''
+        Gets the address from the row using the name, city, state, and post code of the school/uni.
+
+        Args:
+           row (dict): Current row from the excel document
+           plz: (str): Post code of the current row
+           bulkFilePath (str): Path to the current excel document
+           index (int): Row index of the current row
+
+        Returns:
+            dict or None: If the raw address is found by the get_address function, returns the dict object.
+                If the address is not found by the function, or if there is a validation error, returns None.
+        '''
+        raw_address = self.get_address(row['Hochschule'] +
+                                       ", " +
+                                       row['Stadt'] +
+                                       ", " +
+                                       row['Bundesland'] +
+                                       ", " +
+                                       plz)
+
+        if not raw_address or 'address' not in raw_address:
+            self.create_msg_box(
+                "Validation Error",
+                f"Incomplete address data returned from OpenStreetMap for file: {bulkFilePath.split('/')[-1]}, Line: {index + 1}.",
+                'warning'
+            )
+            return None
+
+        if not all(key in raw_address['address'] for key in ('postcode', 'road')):
+            self.create_msg_box(
+                "Validation Error",
+                f"Incomplete address data returned from OpenStreetMap for file: {bulkFilePath.split('/')[-1]}, Line: {index + 1}.",
+                'warning'
+            )
+            return None
+
+        return raw_address
+
+    def process_and_display_dialog(self, row, raw_address, bulkFilePath, index, tables, participants):
+        '''
+        To assist the user in validating input data from the excel documents, this function displays the raw address
+        found by Nominatim, side by side with the data from the excel document.
+
+        Args:
+           row (dict): Current row from the excel document
+           raw_address (dict): Raw address returned by Nominatim's search
+           bulkFilePath (str): Path to the current excel document
+           index (int): Row index of the current row
+           tables (int): Number of tables
+           participants (int): Number of participants
+
+        Returns:
+            None
+
+        '''
+        # Prepare dialog fields and populate them with the row data and suggestions
+        suggested_name = raw_address['name']
+        suggested_plz = raw_address['address']['postcode']
+        suggested_address = raw_address['address']['road']
+        if 'house_number' in raw_address['address']:
+            suggested_address += ' ' + raw_address['address']['house_number']
+        suggested_city = raw_address['address'].get('city', '')
+        suggested_state = raw_address['address'].get('state', '')
+
+        # Prepare and show the dialog
+        self.prepare_dialog(
+            row,
+            suggested_name,
+            suggested_address,
+            suggested_city,
+            suggested_plz,
+            suggested_state,
+            bulkFilePath,
+            index
+        )
+
+        button = self.dialogBox.exec()
+
+        if button == 1:  # Accepted
+            self.save_imported_data(row, raw_address, tables, participants, bulkFilePath, index)
+
+    def prepare_dialog(self, row, suggested_name, suggested_address, suggested_city, suggested_plz, suggested_state,
+                       bulkFilePath, index):
+        '''
+        Creates the popup UI that allows the user to inspect and compare the information from the input excel documents
+        versus the data found by Nominatim's search
+
+           row (dict): Current row from the excel document
+           suggested_name (str): Name of the school/university, as found by Nominatim
+           suggested_address (str): Address of the school/university, as found by Nominatim
+           suggested_city (str): City of the school/university, as found by Nominatim
+           suggested_plz (str): Post code of the school/university, as found by Nominatim
+           suggested_state (str): State of the school/university, as found by Nominatim
+           bulkFilePath (str): Path to the current excel document
+           index: (int) Row index of the current row
+
+        Returns:
+            None
+
+        '''
+        # User certification dialog setup
+        self.dialogBox = QDialog(self)
+        self.dialogBox.setWindowTitle(f"Bulk Import - Certify Data {bulkFilePath.split('/')[-1]}, Line: {index + 1}")
+        self.dialogBox.resize(400, 200)
+        self.dialogBox.layout = QGridLayout()
+
+        '''
+        Define dialog box columns
+        '''
+        firstColumn = QLabel('')
+        secondColumn = QLabel('Data from Excel')
+        thirdColumn = QLabel('Data from OpenStreetMap')
+
+        '''
+        Define Labels for column 1 and Edits for column 2.
+        
+        Column 3 is suggested values and are read-only
+        '''
+        dateLabel = QLabel("Date:", self)
+        self.dateEdit = QLineEdit(self)
+        if row['Datum'] == '':
+            self.dateEdit.setText(QDate.currentDate().toString("dd.MM.yyyy"))
+            self.dateEdit.setStyleSheet('background-color: red')
+        else:
+            self.dateEdit.setText(row['Datum'].strftime("%d.%m.%Y"))
+        dateSuggested = QLabel('')
+
+        nameLabel = QLabel("Name:", self)
+        self.nameEdit = QLineEdit(self)
+        self.nameEdit.setText(row['Hochschule'].strip())
+        nameSuggested = QLineEdit(suggested_name)
+        nameSuggested.setReadOnly(True)
+
+        addressLabel = QLabel("Address:", self)
+        self.addressEdit = QLineEdit(self)
+        self.addressEdit.setText(str(row['Adresse']).strip())
+        addressSuggested = QLineEdit(suggested_address)
+        addressSuggested.setReadOnly(True)
+
+        cityLabel = QLabel("City:", self)
+        self.cityEdit = QLineEdit(self)
+        self.cityEdit.setText(row['Stadt'].strip())
+        citySuggested = QLineEdit(suggested_city)
+        citySuggested.setReadOnly(True)
+
+        plzLabel = QLabel("PLZ Code:", self)
+        self.plzEdit = QLineEdit(self)
+        self.plzEdit.setText(str(row['PLZ']).strip())
+        plzSuggested = QLineEdit(suggested_plz)
+        plzSuggested.setReadOnly(True)
+
+        stateLabel = QLabel("State:", self)
+        stateCombo = QComboBox()
+        for state in self.stateList:
+            stateCombo.addItem(state)
+        state = str(row['Bundesland']).strip()
+        if state in self.stateList:
+            stateCombo.setCurrentIndex(self.stateList.index(state))
+        stateSuggested = QLineEdit(suggested_state)
+        stateSuggested.setReadOnly(True)
+
+        tableLabel = QLabel("Tables:", self)
+        self.tableEdit = QSpinBox(self)
+        self.tableEdit.setMinimum(0)
+        self.tableEdit.setMaximum(2000)
+        self.tableEdit.setValue(int(row['Tische']))
+        tableSuggested = QLabel('')
+
+        participantLabel = QLabel("Participants:", self)
+        self.participantEdit = QSpinBox(self)
+        self.participantEdit.setMinimum(0)
+        self.participantEdit.setMaximum(9999)
+        self.participantEdit.setValue(int(row['Teilnehmer']))
+        participantSuggested = QLabel('')
+
+        # Setup dialog and buttons
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
+
+        '''
+        Define the widget layout for the data review dialog box
+        '''
+        self.dialogBox.layout.addWidget(firstColumn, 0, 0)
+        self.dialogBox.layout.addWidget(secondColumn, 0, 1)
+        self.dialogBox.layout.addWidget(thirdColumn, 0, 2)
+        self.dialogBox.layout.addWidget(dateLabel, 1, 0)
+        self.dialogBox.layout.addWidget(self.dateEdit, 1, 1)
+        self.dialogBox.layout.addWidget(dateSuggested, 1, 2)
+        self.dialogBox.layout.addWidget(nameLabel, 2, 0)
+        self.dialogBox.layout.addWidget(self.nameEdit, 2, 1)
+        self.dialogBox.layout.addWidget(nameSuggested, 2, 2)
+        self.dialogBox.layout.addWidget(addressLabel, 3, 0)
+        self.dialogBox.layout.addWidget(self.addressEdit, 3, 1)
+        self.dialogBox.layout.addWidget(addressSuggested, 3, 2)
+        self.dialogBox.layout.addWidget(cityLabel, 4, 0)
+        self.dialogBox.layout.addWidget(self.cityEdit, 4, 1)
+        self.dialogBox.layout.addWidget(citySuggested, 4, 2)
+        self.dialogBox.layout.addWidget(plzLabel, 5, 0)
+        self.dialogBox.layout.addWidget(self.plzEdit, 5, 1)
+        self.dialogBox.layout.addWidget(plzSuggested, 5, 2)
+        self.dialogBox.layout.addWidget(stateLabel, 6, 0)
+        self.dialogBox.layout.addWidget(stateCombo, 6, 1)
+        self.dialogBox.layout.addWidget(stateSuggested, 6, 2)
+        self.dialogBox.layout.addWidget(tableLabel, 7, 0)
+        self.dialogBox.layout.addWidget(self.tableEdit, 7, 1)
+        self.dialogBox.layout.addWidget(tableSuggested, 7, 2)
+        self.dialogBox.layout.addWidget(participantLabel, 8, 0)
+        self.dialogBox.layout.addWidget(self.participantEdit, 8, 1)
+        self.dialogBox.layout.addWidget(participantSuggested, 8, 2)
+        self.dialogBox.layout.addWidget(self.buttonBox, 9, 0, 1, 3)
+        self.dialogBox.setLayout(self.dialogBox.layout)
+
+        # Connect signals to validation function
+        self.dateEdit.textChanged.connect(self.validate_fields)
+        self.nameEdit.textChanged.connect(self.validate_fields)
+        self.addressEdit.textChanged.connect(self.validate_fields)
+        self.cityEdit.textChanged.connect(self.validate_fields)
+        self.plzEdit.textChanged.connect(self.validate_fields)
+        self.tableEdit.valueChanged.connect(self.validate_fields)
+        self.participantEdit.valueChanged.connect(self.validate_fields)
+        self.validate_fields()
+
+        self.buttonBox.accepted.connect(self.acceptBulkImport)
+        self.buttonBox.rejected.connect(self.rejectBulkImport)
+
+    def save_imported_data(self, row, raw_address, tables, participants, bulkFilePath, index):
+        '''
+        Pulls the input data from the text edit fields and saves it by calling update_excel.
+
+        Args:
+           row (dict): [UNUSED] Current row from the excel document
+           raw_address: [UNUSED] (dict) Raw address returned by Nominatim's search
+           tables (int): Number of tables
+           participants (int): Number of Participants
+           bulkFilePath (str): [UNUSED] Path to the current excel document
+           index (int): [UNUSED] Row index of the current row
+
+        Returns:
+            None
+
+        '''
+        # Save the data
+        date = self.dateEdit.text()
         name = self.nameEdit.text()
-        raw_address = self.get_address(name).split(', ')
-        self.nameEdit.setText(raw_address[0])
-        self.plzEdit.setText(raw_address[-2])
-        self.cityEdit.setText(raw_address[-4])
-        state = raw_address[-3]
-        i = -1
-        for item in self.stateDict:
-            i += 1
-            if state == item:
-                self.stateCombo.setCurrentIndex(i)
-        substring_list = ['straße',
-                          'platz',
-                          'weg',
-                          'gasse',
-                          'allee',
-                          'ring',
-                          'Straße',
-                          'Platz',
-                          'Weg',
-                          'Gasse',
-                          'Allee',
-                          'Ring',
-                          'Im ',
-                          "Am ",
-                            "An ",
-                            "Auf ",
-                            "In ",
-                            "Zum ",
-                            "Zur ",
-                            "Zu ",
-                            "Bei ",
-                            "Unter ",
-                            "Über ",
-                            "Vor ",
-                            "Hinter ",
-                            "Neben ",
-                          "stieg",
-                            "Stieg",
-                            "steg",
-                            "Steg",
-                            "steig",
-                            "Steig",
-                          "Ufer"
-                          ]
-        for field in raw_address:
-            if any(substring in field for substring in substring_list):
-                number = raw_address.index(field)
-                if number == 2:
-                    self.addressEdit.setText(raw_address[2] + ' ' + raw_address[1])
-                else:
-                    self.addressEdit.setText(raw_address[1])
+        address = self.addressEdit.text()
+        city = self.cityEdit.text()
+        state = self.stateCombo.currentText()
+        plzCode = str(self.plzEdit.text())
+        latitude, longitude = self.get_coordinates(city, state, plzCode, address)
+        self.update_excel(self.excelFilePath, date, name, address, city, state, plzCode, latitude, longitude, tables,
+                          participants)
+
+    def cleanup_imported_files(self, importedData):
+        '''
+        If the file was imported properly then the excel document is deleted from the disk. If the file had errors,
+        such as blank fields, it was not recorded, skipped, and is not deleted so that the user can correct the error.
+
+        Args:
+            importedData (list): List of files that were skipped during importing
+
+        Returns:
+            None
+
+        '''
+        for i in reversed(range(self.bulkImportList.count())):
+            if i in [x[1] for x in importedData]:
+                continue
+            else:
+                bulkFilePath = self.bulkImportList.item(i).text()
+                if os.path.exists(bulkFilePath):
+                    os.remove(bulkFilePath)
+                self.bulkImportList.takeItem(i)
+
+        if importedData:
+            text = 'Not Processed:\n'
+            for i in importedData:
+                text += f'{i[0].split("/")[-1]} Line {i[1]}\n'
+            self.create_msg_box("Bulk Import Complete", text, 'warning')
+
+    def get_from_address(self, raw_address, *keys):
+        """
+        Helper function to retrieve the value from raw_address['address']
+        using the first matching key in the provided keys.
+
+        Args:
+           raw_address (dict): Raw address returned by Nominatim's search
+           keys (str): Keys to be checked if they exist in the address. Matching is necessary due to Nominatim's
+                inconsistencies. Sometimes uses city, town, or village.
+        Returns:
+            str or None: If the key exists, return the value, otherwise return None
+        """
+        for key in keys:
+            if key in raw_address['address']:
+                return raw_address['address'][key]
+        return None
+
+    def onLookupAddressButtonClicked(self):
+        """
+        Handles the event when the 'Lookup Address' button is clicked.
+
+        This method retrieves and processes the address information based on the name input by the user.
+        It attempts to fetch and display the corresponding city, state, postcode, and road details in the appropriate UI fields.
+        The method handles special cases for certain cities (Berlin, Hamburg, Bremen) and ensures that essential address components
+        like the city, state, postcode, and road are available before populating the UI.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            AddressError: If the city, state, postcode, or road information is missing from the retrieved address.
+
+        """
+        name = self.nameEdit.text()
+        try:
+            raw_address = self.get_address(name)
+            if raw_address == None:
+                return
+            self.nameEdit.setText(raw_address['name'])
+
+            # Attempt to retrieve the city, town, or village
+            city = self.get_from_address(raw_address, 'city', 'town', 'village')
+            if not city:
+                raise AddressError("City/Town/Village not found in the address.")
+
+            # Handle special cases for Berlin, Hamburg, and Bremen
+            if city in ['Berlin', 'Hamburg', 'Bremen']:
+                state = city
+                self.cityEdit.setText(city)
+            else:
+                # Attempt to retrieve the state or equivalent
+                state = self.get_from_address(raw_address, 'state', 'region')
+                if not state:
+                    raise AddressError("State/Region not found in the address.")
+                self.cityEdit.setText(city)
+
+            # Set the state in the combo box
+            self.stateCombo.setCurrentIndex(self.stateList.index(state))
+
+            # Handle postcode and road
+            postcode = raw_address['address'].get('postcode')
+            road = raw_address['address'].get('road')
+            if postcode and road:
+                self.plzEdit.setText(postcode)
+                house_number = raw_address['address'].get('house_number', '')
+                self.addressEdit.setText(f"{road} {house_number}".strip())
+            else:
+                raise AddressError("Incomplete address: postcode or road missing.")
+
+        except AttributeError:
+            self.create_msg_box("Address Not Found", "Address not found. Please try again.", 'warning')
+            return
+        except AddressError as e:
+            self.create_msg_box("Address Error",
+                                f"Error: {str(e)} \n\n"
+                                f"Returned address was:\n\n {raw_address['display_name']}.",
+                                'warning')
+            return
 
     def clearAll(self):
+        '''
+        Clears all text input fields
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        '''
         self.nameEdit.setText('')
         self.addressEdit.setText('')
         self.cityEdit.setText('')
         self.plzEdit.setText('')
+        self.dateEdit.setDate(QDate.currentDate())
         self.stateCombo.setCurrentIndex(0)
         self.tableEdit.setValue(0)
         self.participantEdit.setValue(0)
 
-    def initUI(self):
+    def onRecalculateButtonClicked(self):
+        '''
+        When the button is clicked, recalculate the statistics for the Stats dataframe.
 
+        Args:
+            None
+
+        Returns:
+            None
+
+        '''
+        msgBox = QMessageBox(self)
+        msgBox.setIcon(QMessageBox.Icon.Warning)
+        msgBox.setWindowTitle("Recalculate Statistics?")
+        msgBox.setText(
+            "Proceeding will clear all existing statistics and recalculate them from scratch.\n\n "
+            "Are you sure you want to proceed?\n\n "
+            "Calculation may take a while.")
+        msgBox.setStandardButtons(
+            QMessageBox.StandardButton.Yes |
+            QMessageBox.StandardButton.No
+        )
+        button = msgBox.exec()
+
+        if button == QMessageBox.StandardButton.No:
+            return
+        elif button == QMessageBox.StandardButton.Yes:
+            df_events, df_stats = self.read_excel_file(self.excelFilePath)
+            df_stats = pd.DataFrame(columns=['Hochschule', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                                             'EventCount', 'CityEventTotal', 'TotalTables',
+                                             'TotalParticipants', 'CityParticipantsTotal'])
+            self.recalculateStatistics(df_events, df_stats)
+            self.create_msg_box("Complete", "Recalculation Complete")
+            return
+
+    def recalculateStatistics(self, df_events, df_stats, lat=None, lon=None):
+        """
+        Recalculates statistical data based on event information and updates the statistics DataFrame.
+
+        This method processes the events in the provided `df_events` DataFrame to generate and update statistical
+        information in the `df_stats` DataFrame. The statistics include the number of events, total tables,
+        and total participants for each university in the specified city. If latitude and longitude coordinates
+        are not provided, the method attempts to retrieve them using the city's address information.
+
+        Args:
+            df_events (pd.DataFrame): A DataFrame containing event details, including fields such as 'Hochschule',
+                'Adresse', 'Stadt', 'Bundesland', 'PLZ', 'Tische', and 'Teilnehmer'.
+            df_stats (pd.DataFrame): A DataFrame that will be populated with statistics including 'Hochschule',
+                'Stadt', 'PLZ', 'Latitude', 'Longitude', 'EventCount', 'CityEventTotal', 'TotalTables',
+                'TotalParticipants', and 'CityParticipantsTotal'.
+            lat (float, optional): Latitude coordinate to be used if not calculated or provided. Defaults to None.
+            lon (float, optional): Longitude coordinate to be used if not calculated or provided. Defaults to None.
+
+        Returns:
+            bool: True if the Excel file was successfully written, otherwise False if an OSError occurs during the file writing process.
+
+        Raises:
+            None: All exceptions are handled internally, specifically file writing errors are caught and result in returning False.
+
+        """
+        df_stats = pd.DataFrame(columns=['Hochschule', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                                         'EventCount', 'CityEventTotal', 'TotalTables',
+                                         'TotalParticipants', 'CityParticipantsTotal'])
+        for index, row in df_events.iterrows():
+            name = row['Hochschule']
+            address = row['Adresse']
+            city = row['Stadt']
+            state = row['Bundesland']
+            plz = row['PLZ']
+            tables = row['Tische']
+            participants = row['Teilnehmer']
+            school_exists = ((df_stats['Hochschule'] == name) & (df_stats['Stadt'] == city)).any().any()
+            if school_exists:
+                df_stats.loc[(df_stats['Hochschule'] == name) & (df_stats['Stadt'] == city), 'EventCount'] += 1
+                df_stats.loc[
+                    (df_stats['Hochschule'] == name) & (df_stats['Stadt'] == city), 'TotalTables'] += int(
+                    tables)
+                df_stats.loc[
+                    (df_stats['Hochschule'] == name) & (df_stats['Stadt'] == city), 'TotalParticipants'] += int(
+                    participants)
+            else:
+                if lat is None or lon is None:
+                    lat, lon = self.get_coordinates(city, state, plz, address)
+                    if lat is None or lon is None:
+                        self.create_msg_box("Coordinates not found",
+                                            f"No coordinates were found for {name} at {address}. {city}, {state}, {plz} \n"
+                                            f"using coordinates for city instead.",
+                                            'warning')
+                        lat, lon = self.get_coordinates(city, state, plz)
+                df_stats.loc[len(df_stats.index) + 1] = [name, city, plz, lat, lon, 1, -1, int(tables),
+                                                         int(participants), -1]
+                lat = None
+                lon = None
+            city_event_total = df_stats[df_stats['Stadt'] == city]['EventCount'].sum()
+            df_stats.loc[df_stats['Stadt'] == city, 'CityEventTotal'] = int(city_event_total)
+            city_participants_total = df_stats[df_stats['Stadt'] == city]['TotalParticipants'].sum()
+            df_stats.loc[df_stats['Stadt'] == city, 'CityParticipantsTotal'] = int(city_participants_total)
+        try:
+            with pd.ExcelWriter(self.excelFilePath) as writer:
+                df_events.to_excel(writer, sheet_name='Events', index=False)
+                df_stats.to_excel(writer, sheet_name='Stats', index=False)
+            return True
+        except OSError:
+            return False
+
+    def onArchiveButtonClicked(self):
+        """
+        Archives the existing ClimatePlotter excel document, copying or moving it to the archive folder.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        """
+        msgBox = QMessageBox(self)
+        msgBox.setIcon(QMessageBox.Icon.Warning)
+        msgBox.setWindowTitle("Archive Excel?")
+        msgBox.setText(
+            "Archive and clear to start a new data file\n\n"
+            "Archive and keep to keep the current data file\n\n"
+            "Cancel to keep the current data file without archiving"
+        )
+        archive_and_clear_button = QPushButton("Archive and Clear")
+        archive_and_keep_button = QPushButton("Archive and Keep")
+
+        msgBox.addButton(archive_and_clear_button, QMessageBox.ButtonRole.AcceptRole)
+        msgBox.addButton(archive_and_keep_button, QMessageBox.ButtonRole.AcceptRole)
+        msgBox.addButton(QMessageBox.StandardButton.Cancel)
+
+        msgBox.exec()
+
+        if msgBox.clickedButton() == archive_and_clear_button:
+            self.archive_and_clear()
+        elif msgBox.clickedButton() == archive_and_keep_button:
+            self.archive_and_keep()
+        elif msgBox.clickedButton() == QMessageBox.StandardButton.Cancel:
+            return
+
+    def archive_and_clear(self):
+        """
+        Called from the onArchiveButtonClicked function. Moves the existing ClimatePlotter document to the
+        archive folder and creates a new file.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        """
+        try:
+            self.archiveExcel()
+            df_events = pd.DataFrame(
+                columns=['Datum', 'Hochschule', 'Adresse', 'Stadt', 'Bundesland', 'PLZ', 'Tische', 'Teilnehmer'])
+            df_stats = pd.DataFrame(columns=['Hochschule', 'Stadt', 'PLZ', 'Latitude', 'Longitude',
+                                             'EventCount', 'CityEventTotal', 'TotalTables',
+                                             'TotalParticipants', 'CityParticipantsTotal'])
+            with pd.ExcelWriter(self.excelFilePath) as writer:
+                df_events.to_excel(writer, sheet_name='Events', index=False)
+                df_stats.to_excel(writer, sheet_name='Stats', index=False)
+        except OSError:
+            self.create_msg_box("Error", "Error in archiving data")
+        return
+
+    def archive_and_keep(self):
+        """
+        Called from the onArchiveButtonClicked function. Copies the existing ClimatePlotter document to the
+        archive folder.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        """
+        self.archiveExcel()
+        return
+
+    def archiveExcel(self):
+        """
+        Creates the copy of the ClimatePlotter excel document in the archive folder.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        """
+        date = pd.Timestamp.now().strftime("%Y-%m-%d_H%HM%MS%S")
+        folder_path = os.path.join(os.path.dirname(__file__), 'Plotter_Output', 'Archive')
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+        shutil.copy(
+            self.excelFilePath,
+            os.path.join(
+                folder_path,
+                date + "_Archived_ClimatePlotter.xlsx"
+            )
+        )
+        self.create_msg_box("Complete", "Archiving Complete")
+        return
+
+    def initUI(self):
+        """
+        Initialize the UI of the main window
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        """
         self.setGeometry(300, 300, 1024, 700)
         self.setWindowTitle('Deutschland - Klimapuzzle Plotter')
         self.setWindowIcon(QIcon('icon/icon.png'))
@@ -762,10 +1218,8 @@ class LectureMapApp(QMainWindow):
         # Layout
         mylayout = QHBoxLayout()
         leftBox = QGridLayout()
-        BulkImportBox = QGridLayout()
-        InputBox = QGridLayout()
         middleBox = QVBoxLayout()
-        rightBox = QVBoxLayout()
+        rightBox = QGridLayout()
 
         '''
         BulkButtonBox
@@ -778,14 +1232,17 @@ class LectureMapApp(QMainWindow):
         BulkImportBox
         '''
         self.bulkImportList = QListWidget(self)
+        bulkImportGroupBox = QGroupBox("Bulk Import", self)
+        BulkImportBoxLayout = QGridLayout()
+        bulkImportGroupBox.setLayout(BulkImportBoxLayout)
 
         self.bulkImportButton = QPushButton("Bulk Import", self)
 
-        BulkImportBox.addWidget(self.bulkImportList, 0, 0, 3, 1)
-        BulkImportBox.addWidget(self.addButton, 0, 1)
-        BulkImportBox.addWidget(self.removeButton, 1, 1)
-        BulkImportBox.addWidget(self.clearButton, 2, 1)
-        BulkImportBox.addWidget(self.bulkImportButton, 3, 0, 1, 2)
+        BulkImportBoxLayout.addWidget(self.bulkImportList, 0, 0, 3, 1)
+        BulkImportBoxLayout.addWidget(self.addButton, 0, 1)
+        BulkImportBoxLayout.addWidget(self.removeButton, 1, 1)
+        BulkImportBoxLayout.addWidget(self.clearButton, 2, 1)
+        BulkImportBoxLayout.addWidget(self.bulkImportButton, 3, 0, 1, 2)
 
         self.addButton.clicked.connect(self.addExcelFiles)
         self.removeButton.clicked.connect(self.removeExcelFiles)
@@ -808,50 +1265,81 @@ class LectureMapApp(QMainWindow):
         self.cityLabel = QLabel("City:", self)
         self.cityEdit = QLineEdit(self)
 
-        self.plzLabel = QLabel("PLZ Code (Optional):", self)
+        self.plzLabel = QLabel("PLZ Code:", self)
         self.plzEdit = QLineEdit(self)
 
         self.stateLabel = QLabel("State:", self)
         self.stateCombo = QComboBox()
-        for state in self.stateDict:
+        for state in self.stateList:
             self.stateCombo.addItem(state)
+
+        self.dateLabel = QLabel("Date (dd.MM.yyyy):", self)
+        self.dateEdit = QDateEdit(self)
+        self.dateEdit.setCalendarPopup(True)
+        self.dateEdit.setDisplayFormat("dd.MM.yyyy")
+        self.dateEdit.setDate(QDate.currentDate())
+        minDate = QDate(2020, 1, 1)
+        maxDate = QDate.currentDate()
+        self.dateEdit.setMinimumDate(minDate)
+        self.dateEdit.setMaximumDate(maxDate)
 
         self.tableLabel = QLabel("Tische:", self)
         self.tableEdit = QSpinBox(self)
+        self.tableEdit.setMinimum(0)
+        self.tableEdit.setMaximum(2000)
         self.tableEdit.setMinimum(0)
 
         self.participantLabel = QLabel("Teilnehmer:", self)
         self.participantEdit = QSpinBox(self)
         self.participantEdit.setMinimum(0)
+        self.participantEdit.setMaximum(9999)
 
         # New button for updating CSV
         self.updateCsvButton = QPushButton("Update Excel", self)
         self.updateCsvButton.clicked.connect(self.onUpdateCsvButtonClicked)
 
         self.plotButton = QPushButton("Update Plot", self)
-        self.plotButton.clicked.connect(self.onPlotButtonClicked)
+        self.plotButton.clicked.connect(lambda: self.onPlotButtonClicked(doSave=True))
 
         self.clearAllButton = QPushButton("Clear All", self)
         self.clearAllButton.clicked.connect(self.clearAll)
 
-        InputBox.addWidget(self.nameLabel, 0, 0)
-        InputBox.addWidget(self.nameEdit, 0, 1)
-        InputBox.addWidget(self.addressLookupButton, 1, 0, 1, 2)
-        InputBox.addWidget(self.addressLabel, 2, 0)
-        InputBox.addWidget(self.addressEdit, 2, 1)
-        InputBox.addWidget(self.cityLabel, 3, 0)
-        InputBox.addWidget(self.cityEdit, 3, 1)
-        InputBox.addWidget(self.plzLabel, 4, 0)
-        InputBox.addWidget(self.plzEdit, 4, 1)
-        InputBox.addWidget(self.stateLabel, 5, 0)
-        InputBox.addWidget(self.stateCombo, 5, 1)
-        InputBox.addWidget(self.tableLabel, 6, 0)
-        InputBox.addWidget(self.tableEdit, 6, 1)
-        InputBox.addWidget(self.participantLabel, 7, 0)
-        InputBox.addWidget(self.participantEdit, 7, 1)
-        InputBox.addWidget(self.updateCsvButton, 8, 0)
-        InputBox.addWidget(self.plotButton, 8, 1)
-        InputBox.addWidget(self.clearAllButton, 9, 0, 1, 2)
+        self.recalculateButton = QPushButton("Recalculate Statistics", self)
+        self.recalculateButton.clicked.connect(self.onRecalculateButtonClicked)
+
+        self.archiveButton = QPushButton("Archive Xlsx", self)
+        self.archiveButton.clicked.connect(self.onArchiveButtonClicked)
+
+        InputBoxGroupBox = QGroupBox("Manual Input", self)
+        InputBoxLayout = QGridLayout()
+        InputBoxGroupBox.setLayout(InputBoxLayout)
+
+        InputBoxLayout.addWidget(self.nameLabel, 0, 0)
+        InputBoxLayout.addWidget(self.nameEdit, 0, 1)
+        InputBoxLayout.addWidget(self.addressLookupButton, 1, 0, 1, 2)
+        InputBoxLayout.addWidget(self.addressLabel, 2, 0)
+        InputBoxLayout.addWidget(self.addressEdit, 2, 1)
+        InputBoxLayout.addWidget(self.cityLabel, 3, 0)
+        InputBoxLayout.addWidget(self.cityEdit, 3, 1)
+        InputBoxLayout.addWidget(self.plzLabel, 4, 0)
+        InputBoxLayout.addWidget(self.plzEdit, 4, 1)
+        InputBoxLayout.addWidget(self.stateLabel, 5, 0)
+        InputBoxLayout.addWidget(self.stateCombo, 5, 1)
+        InputBoxLayout.addWidget(self.dateLabel, 6, 0)
+        InputBoxLayout.addWidget(self.dateEdit, 6, 1)
+        InputBoxLayout.addWidget(self.tableLabel, 7, 0)
+        InputBoxLayout.addWidget(self.tableEdit, 7, 1)
+        InputBoxLayout.addWidget(self.participantLabel, 8, 0)
+        InputBoxLayout.addWidget(self.participantEdit, 8, 1)
+        InputBoxLayout.addWidget(self.updateCsvButton, 9, 0)
+        InputBoxLayout.addWidget(self.plotButton, 9, 1)
+        InputBoxLayout.addWidget(self.clearAllButton, 10, 0, 1, 2)
+
+        FileControlGroupBox = QGroupBox("File Control", self)
+        FileControlBoxLayout = QVBoxLayout()
+        FileControlGroupBox.setLayout(FileControlBoxLayout)
+        FileControlBoxLayout.addWidget(self.recalculateButton)
+        FileControlBoxLayout.addWidget(self.archiveButton)
 
         '''
         middleBox
@@ -863,29 +1351,82 @@ class LectureMapApp(QMainWindow):
         '''
         rightBox
         '''
-        for country in self.germanyDict:
-            radioButton = QRadioButton(country, self)
-            rightBox.addWidget(radioButton)
-            self.radio_buttons.append(radioButton)
-        radioButton.setChecked(True)
+        self.plotListWidget = QListWidget(self)
+        self.setupPlotListWidget()
+        self.plotListWidget.clicked.connect(self.onplotListWidgetClicked)
 
-        rightBox.addWidget(QFrame(self, frameShape=QFrame.Shape.HLine))
+        viewInputBox = QGridLayout()
 
-        for state in self.stateDict:
-            radioButton = QRadioButton(state, self)
-            rightBox.addWidget(radioButton)
-            self.radio_buttons.append(radioButton)
+        viewInputGroupBox = QGroupBox("Manual View Input", self)
+        viewInputBoxLayout = QGridLayout()
+        viewInputGroupBox.setLayout(viewInputBoxLayout)
+        self.viewNameLabel = QLabel("View Name:", self)
+        self.viewName = QLineEdit(self)
+        self.viewLatLabel = QLabel("Central Latitude:", self)
+        self.viewLat = QLineEdit(self)
+        self.viewLonLabel = QLabel("Central Longitude:", self)
+        self.viewLon = QLineEdit(self)
+        self.viewLLCLatLabel = QLabel("Lower Left Corner Latitude:", self)
+        self.viewLLCLat = QLineEdit(self)
+        self.viewLLCLonLabel = QLabel("Lower Left Corner Longitude:", self)
+        self.viewLLCLon = QLineEdit(self)
+        self.viewURCLatLabel = QLabel("Upper Right Corner Latitude:", self)
+        self.viewURCLat = QLineEdit(self)
+        self.viewURCLonLabel = QLabel("Upper Right Corner Longitude:", self)
+        self.viewURCLon = QLineEdit(self)
+        self.cityLookupButton = QPushButton("Find City Coordinates", self)
 
-        rightBox.addWidget(QFrame(self, frameShape=QFrame.Shape.HLine))
+        viewInputBoxLayout.addWidget(self.viewNameLabel, 0, 0)
+        viewInputBoxLayout.addWidget(self.viewName, 0, 1)
+        viewInputBoxLayout.addWidget(self.viewLatLabel, 1, 0)
+        viewInputBoxLayout.addWidget(self.viewLat, 1, 1)
+        viewInputBoxLayout.addWidget(self.viewLonLabel, 2, 0)
+        viewInputBoxLayout.addWidget(self.viewLon, 2, 1)
+        viewInputBoxLayout.addWidget(self.viewLLCLatLabel, 3, 0)
+        viewInputBoxLayout.addWidget(self.viewLLCLat, 3, 1)
+        viewInputBoxLayout.addWidget(self.viewLLCLonLabel, 4, 0)
+        viewInputBoxLayout.addWidget(self.viewLLCLon, 4, 1)
+        viewInputBoxLayout.addWidget(self.viewURCLatLabel, 5, 0)
+        viewInputBoxLayout.addWidget(self.viewURCLat, 5, 1)
+        viewInputBoxLayout.addWidget(self.viewURCLonLabel, 6, 0)
+        viewInputBoxLayout.addWidget(self.viewURCLon, 6, 1)
 
-        for city in self.cityDict:
-            radioButton = QRadioButton(city, self)
-            rightBox.addWidget(radioButton)
-            self.radio_buttons.append(radioButton)
+        cityLookupGroupBox = QGroupBox("City Lookup", self)
+        cityLookupBoxLayout = QGridLayout()
+        cityLookupGroupBox.setLayout(cityLookupBoxLayout)
 
-        leftBox.addLayout(BulkImportBox, 0, 0, 2, 2)
-        leftBox.addWidget(QFrame(self, frameShape=QFrame.Shape.HLine), 3, 0, 1, 2)
-        leftBox.addLayout(InputBox, 4, 0, 3, 2)
+        self.cityNameLabel = QLabel("City Name:", self)
+        self.cityName = QLineEdit(self)
+        self.stateNameLabel = QLabel("State Name:", self)
+        self.stateLookupCombo = QComboBox()
+        for state in self.stateList:
+            self.stateLookupCombo.addItem(state)
+        self.cityLookupButton.clicked.connect(self.onCityLookupButtonClicked)
+        cityLookupBoxLayout.addWidget(self.cityNameLabel, 0, 0)
+        cityLookupBoxLayout.addWidget(self.cityName, 0, 1)
+        cityLookupBoxLayout.addWidget(self.stateNameLabel, 1, 0)
+        cityLookupBoxLayout.addWidget(self.stateLookupCombo, 1, 1)
+        cityLookupBoxLayout.addWidget(self.cityLookupButton, 2, 0, 1, 2)
+
+        self.PreViewAddButton = QPushButton("Preview View", self)
+        self.PreViewAddButton.clicked.connect(self.onPreViewButtonClicked)
+        self.ViewAddButton = QPushButton("Save View", self)
+        self.ViewAddButton.clicked.connect(self.onViewAddButtonClicked)
+        self.ViewRemoveButton = QPushButton("Remove View", self)
+        self.ViewRemoveButton.clicked.connect(self.onViewRemoveButtonClicked)
+
+        viewInputBox.addWidget(cityLookupGroupBox, 0, 0, 5, 2)
+        viewInputBox.addWidget(viewInputGroupBox, 5, 0, 5, 2)
+        viewInputBox.addWidget(self.PreViewAddButton, 10, 0, 1, 2)
+        viewInputBox.addWidget(self.ViewAddButton, 11, 0, 1, 2)
+        viewInputBox.addWidget(self.ViewRemoveButton, 12, 0, 1, 2)
+
+        rightBox.addWidget(self.plotListWidget, 0, 0, 5, 1)
+        rightBox.addLayout(viewInputBox, 6, 0, 3, 1)
+
+        leftBox.addWidget(bulkImportGroupBox, 0, 0, 3, 2)
+        leftBox.addWidget(InputBoxGroupBox, 3, 0, 3, 2)
+        leftBox.addWidget(FileControlGroupBox, 6, 0, 1, 2)
 
         mylayout.addLayout(leftBox)
         mylayout.addLayout(middleBox)
@@ -896,7 +1437,60 @@ class LectureMapApp(QMainWindow):
         # Draw the initial map
         self.drawInitialMap()
 
+    def create_msg_box(self, title, text, type='info'):
+        """
+        Creates popup style message boxes.
+
+        Args:
+            title (str): Title text for header for the pop up window
+            text (str): Body text for the pop up window
+            type (str): Class of pop up. Accepts 'info', 'warning', or 'critical'
+
+        Returns:
+            None
+
+        """
+        msgBox = QMessageBox(self)
+        if type == 'info':
+            type = QMessageBox.Icon.Information
+        elif type == 'warning':
+            type = QMessageBox.Icon.Warning
+        elif type == 'critical':
+            type = QMessageBox.Icon.Critical
+        msgBox.setIcon(QMessageBox.Icon.Information)
+        msgBox.setWindowTitle(title)
+        msgBox.setText(text)
+        msgBox.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msgBox.exec()
+
     def onUpdateCsvButtonClicked(self):
+        """
+        Handles the event when the 'Update CSV' button is clicked.
+
+        This method validates the input fields, converts relevant fields to integers,
+        and checks that they are greater than zero. It then retrieves the coordinates
+        based on the provided address details and updates the corresponding Excel file
+        with the new data. If the data is successfully saved, the statistics are recalculated
+        and the user is notified. If the input validation fails, or the Excel file cannot
+        be updated, an appropriate error message is displayed.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            None: All exceptions are handled internally. A ValueError is caught and an error message
+            is displayed if any of the input fields are invalid, empty, or if tables and participants
+            are not greater than zero.
+
+        UI Feedback:
+            - Displays a success message if the data is saved successfully.
+            - Displays an error message if input validation fails or if the data cannot be saved.
+
+        """
+        date = self.dateEdit.text()
         name = self.nameEdit.text()
         address = self.addressEdit.text()
         city = self.cityEdit.text()
@@ -904,63 +1498,361 @@ class LectureMapApp(QMainWindow):
         state = self.stateCombo.currentText()
         tables = self.tableEdit.text()
         participants = self.participantEdit.text()
-        if name == '' or city == '' or state == '':
-            msgBox = QMessageBox(self)
-            msgBox.setIcon(QMessageBox.Icon.Information)
-            msgBox.setWindowTitle("Input Empty!")
-            msgBox.setText("Fill in all the fields!\n\nData not saved.")
-            msgBox.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msgBox.exec()
-        else:
-            latitude, longitude = self.get_coordinates(address, city, state, plzCode)
-            self.update_excel(self.excelFilePath, name, address, city, state, plzCode, latitude, longitude, tables, participants)
-            msgBox = QMessageBox(self)
-            msgBox.setIcon(QMessageBox.Icon.Information)
-            msgBox.setWindowTitle("Input Successful!")
-            msgBox.setText("Data saved successfully!\n\nClick on 'Update Plot' to see the changes.")
-            msgBox.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msgBox.exec()
 
-            # Clear inputs
-            self.nameEdit.clear()
-            self.cityEdit.clear()
-            self.addressEdit.clear()
-            self.plzEdit.clear()
-            self.tableEdit.setValue(0)
-            self.participantEdit.setValue(0)
+        try:
+            # Validate that all required fields are filled
+            if not date or not name or not address or not city or not plzCode or not state or not tables or not participants:
+                raise ValueError("All fields must be filled in.")
 
-    def getRadioButtonIndex(self):
-        for btn in self.radio_buttons:
-            if btn.isChecked():
-                return self.radio_buttons.index(btn)
+            # Convert tables and participants to integers and check if they are greater than zero
+            tables_int = int(tables)
+            participants_int = int(participants)
+
+            if tables_int <= 0 or participants_int <= 0:
+                raise ValueError("Tables and participants must be greater than zero.")
+
+            # Get coordinates and update the Excel file
+            latitude, longitude = self.get_coordinates(city, state, plzCode, address)
+            successFlag = self.update_excel(
+                self.excelFilePath,
+                date,
+                name,
+                address,
+                city,
+                state,
+                plzCode,
+                latitude,
+                longitude,
+                tables_int,
+                participants_int
+            )
+            df_events, df_stats = self.read_excel_file(self.excelFilePath)
+            self.recalculateStatistics(df_events, df_stats)
+
+            if not successFlag:
+                self.create_msg_box('Input Failed!',
+                                    'Data not saved.\n\nPlease check that the Excel file is not open and try again.',
+                                    'warning')
+            else:
+                self.create_msg_box('Input Successful!',
+                                    'Data saved successfully!\n\nClick on "Update Plot" to see the changes.')
+                # Clear inputs
+                self.clearAll()
+
+        except ValueError as e:
+            # Display an error message if any validation fails
+            self.create_msg_box('Input Error', f'{str(e)}\n\nData not saved.', 'warning')
 
     def getPlotItem(self):
-        radioButtonIndex = self.getRadioButtonIndex()
-        if radioButtonIndex == 0:
-            return list(self.germanyDict.values())[radioButtonIndex], list(self.germanyDict.keys())[radioButtonIndex]
-        elif 0 < radioButtonIndex < 17:
-            radioButtonIndex = radioButtonIndex - 1  # because first button is for Germany, separate dict
-            return list(self.stateDict.values())[radioButtonIndex], list(self.stateDict.keys())[radioButtonIndex]
+        """
+       Retrieves the plot item from the DataFrame based on the currently selected item in the plot list widget.
+
+       This method searches the `df_views` DataFrame for a row where the 'View' column matches the text of the currently
+       selected item in the `plotListWidget`. If a matching entry is found, the first row of that entry is returned.
+
+       Args:
+           None
+
+       Returns:
+           pd.Series: The first row of the matching entry as a Pandas Series if found, otherwise an empty Series.
+       """
+        entry = self.df_views.loc[self.df_views['View'] == self.plotListWidget.currentItem().text()]
+        if not entry.empty:
+            entry = entry.iloc[0]  # Select the first row
+        return entry
+
+    def onPlotButtonClicked(self, doSave=False):
+        """
+        Handles the event of the Plot Update button being clicked.
+
+        Reads the events and stats out of the ClimatePlotter excel document, retrieves the desired view from
+        the views widget, then sends the information to the plot_map function.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        """
+        df_events, df_stats = self.read_excel_file(self.excelFilePath)
+        plotItem = self.getPlotItem()
+        self.plot_map(
+            df_events,
+            df_stats,
+            self.plotPath,
+            self.canvas,
+            plotItem['lat_0'],
+            plotItem['lon_0'],
+            plotItem['llcrnrlat'],
+            plotItem['llcrnrlon'],
+            plotItem['urcrnrlat'],
+            plotItem['urcrnrlon'],
+            plotItem['View'],
+            doSave
+        )
+
+    def setupPlotListWidget(self):
+        """
+        Initialize the UI of the plot view widget on the right hand side of the program.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        """
+        self.plotListWidget.clear()
+        self.plotListWidget.addItems(self.df_views['View'].tolist())
+        self.plotListWidget.setCurrentRow(0)
+
+    def onplotListWidgetClicked(self):
+        """
+        Handles the event of an item in the Views list being clicked upon.
+
+        Gets the data of the selected view and updates the text fields to match.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        """
+        entry = self.getPlotItem()
+        self.viewName.setText(entry['View'])
+        self.viewLat.setText(str(entry['lat_0']))
+        self.viewLon.setText(str(entry['lon_0']))
+        self.viewLLCLat.setText(str(entry['llcrnrlat']))
+        self.viewLLCLon.setText(str(entry['llcrnrlon']))
+        self.viewURCLat.setText(str(entry['urcrnrlat']))
+        self.viewURCLon.setText(str(entry['urcrnrlon']))
+
+    def ClearViewText(self):
+        """
+        Clears the text fields associated with the Views.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        """
+        self.viewName.clear()
+        self.viewLat.clear()
+        self.viewLon.clear()
+        self.viewLLCLat.clear()
+        self.viewLLCLon.clear()
+        self.viewURCLat.clear()
+        self.viewURCLon.clear()
+
+    def onPreViewButtonClicked(self):
+        """
+        Handles the event when the 'Pre-View' button is clicked.
+
+        This method validates and converts the input fields required for plotting. It checks that all necessary
+        fields (latitude, longitude, lower-left corner, upper-right corner coordinates, and view name) are filled
+        and correctly formatted as floats. If any validation fails, an error message is displayed. If all inputs
+        are valid, it proceeds to plot the map using the provided data.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            None: All exceptions are handled internally. A ValueError is caught and an error message is displayed
+            if any input conversion fails or if the view name is empty.
+
+        UI Feedback:
+            - Displays an error message if input validation fails, indicating the specific issue.
+        """
+        try:
+            # Convert input text to floats
+            lat = float(self.viewLat.text())
+            lon = float(self.viewLon.text())
+            llc_lat = float(self.viewLLCLat.text())
+            llc_lon = float(self.viewLLCLon.text())
+            urc_lat = float(self.viewURCLat.text())
+            urc_lon = float(self.viewURCLon.text())
+            view_name = self.viewName.text()
+
+            # Check if any field is empty after conversion
+            if view_name == '':
+                raise ValueError("View name cannot be empty.")
+
+            # If all conversions succeed, proceed with plotting
+            df_events, df_stats = self.read_excel_file(self.excelFilePath)
+            self.plot_map(
+                df_events,
+                df_stats,
+                self.plotPath,
+                self.canvas,
+                lat,
+                lon,
+                llc_lat,
+                llc_lon,
+                urc_lat,
+                urc_lon,
+                view_name,
+                doSave=False
+            )
+
+        except ValueError as e:
+            # Display an error message if there's a problem with conversion or an empty field
+            self.create_msg_box('Input Error', f'Invalid input: {str(e)}\n\nPlease correct the input and try again.',
+                                'warning')
+
+    def onCityLookupButtonClicked(self):
+        """
+        Handles the event when the 'City Lookup' button is clicked.
+
+        This method performs a lookup for the city and state combination entered by the user. It retrieves the
+        corresponding address information using the `get_address` method and populates the relevant fields
+        (view name, latitude, longitude, and bounding box coordinates) in the UI. If no address is found, an
+        error message is displayed. If the address is found, the method automatically triggers a preview of the
+        view by calling `onPreViewButtonClicked`.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            None: All exceptions are handled internally. An `AddressError` is caught and an error message is displayed
+            if no address is found or if there is an issue with the address lookup.
+
+        UI Feedback:
+            - Populates the UI fields with the retrieved address information if successful.
+            - Displays an error message if the address lookup fails.
+        """
+        try:
+            raw_address = self.get_address(self.cityName.text() + ', ' + self.stateLookupCombo.currentText())
+            if raw_address == None:
+                raise AddressError('No address found')
+            self.viewName.setText(raw_address['name'])
+            self.viewLat.setText(str(raw_address['lat']))
+            self.viewLon.setText(str(raw_address['lon']))
+            self.viewLLCLat.setText(str(raw_address['boundingbox'][0]))
+            self.viewLLCLon.setText(str(raw_address['boundingbox'][2]))
+            self.viewURCLat.setText(str(raw_address['boundingbox'][1]))
+            self.viewURCLon.setText(str(raw_address['boundingbox'][3]))
+            self.onPreViewButtonClicked()
+            # return
+        except AddressError as e:
+            self.create_msg_box("Address Error",
+                                f"Error: {str(e)} \n\n"
+                                f"Check that you have selected the correct state where the city is.",
+                                'warning')
+            return
+
+
+    def onViewAddButtonClicked(self):
+        """
+        Handles the event when the 'Add View' button is clicked.
+
+        This method validates the input fields for adding or updating a view configuration. It checks that all
+        necessary fields (latitude, longitude, lower-left corner, upper-right corner coordinates, and view name)
+        are filled. If any field is empty, an error message is displayed. If all inputs are valid, the method
+        checks if the view name already exists in the `df_views` DataFrame:
+
+        - If the view exists, the existing entry is updated with the new coordinates.
+        - If the view does not exist, a new entry is added to the DataFrame.
+
+        The updated DataFrame is then saved to an Excel file, and the view list widget is refreshed to reflect the changes.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            None: All exceptions are handled internally. An error message is displayed if any input field is empty.
+
+        UI Feedback:
+            - Displays a success message if the view is successfully added or updated.
+            - Displays an error message if any input field is empty.
+        """
+        lat = self.viewLat.text()
+        lon = self.viewLon.text()
+        llc_lat = self.viewLLCLat.text()
+        llc_lon = self.viewLLCLon.text()
+        urc_lat = self.viewURCLat.text()
+        urc_lon = self.viewURCLon.text()
+        view_name = self.viewName.text()
+        if lat == '' or lon == '' or llc_lat == '' or llc_lon == '' or urc_lat == '' or urc_lon == '' or view_name == '':
+            self.create_msg_box('Input Empty!', 'Fill in all the fields!\n\nData not saved.', 'warning')
         else:
-            radioButtonIndex = radioButtonIndex - 17  # because first 17 buttons are for Germany and states, separate dict
-            return list(self.cityDict.values())[radioButtonIndex], list(self.cityDict.keys())[radioButtonIndex]
+            view_exists = ((self.df_views['View'] == view_name)).any().any()
+            if view_exists:
+                self.df_views.loc[self.df_views['View'] == view_name, 'lat_0'] = float(lat)
+                self.df_views.loc[self.df_views['View'] == view_name, 'lon_0'] = float(lon)
+                self.df_views.loc[self.df_views['View'] == view_name, 'llcrnrlat'] = float(llc_lat)
+                self.df_views.loc[self.df_views['View'] == view_name, 'llcrnrlon'] = float(llc_lon)
+                self.df_views.loc[self.df_views['View'] == view_name, 'urcrnrlat'] = float(urc_lat)
+                self.df_views.loc[self.df_views['View'] == view_name, 'urcrnrlon'] = float(urc_lon)
+                self.df_views.to_excel(self.viewsFilePath, index=False)
+                self.setupPlotListWidget()
+                self.ClearViewText()
+                self.create_msg_box('Input Successful!',
+                                    'View updated successfully')
+            else:
+                self.df_views.loc[len(self.df_views.index) + 1] = [view_name, float(lat), float(lon), float(llc_lon),
+                                                                   float(llc_lat), float(urc_lon), float(urc_lat)]
+                self.df_views.to_excel(self.viewsFilePath, index=False)
+                self.setupPlotListWidget()
+                self.ClearViewText()
+                self.create_msg_box('Input Successful!',
+                                    'View saved successfully')
 
-    def onPlotButtonClicked(self):
-        df_fresks = self.read_excel(self.excelFilePath)
-        plotItem, plotItemName = self.getPlotItem()
-        self.plot_map(df_fresks, self.plotPath, self.canvas, plotItem['lat_0'], plotItem['lon_0'], plotItem['llcrnrlat'],
-                 plotItem['llcrnrlon'], plotItem['urcrnrlat'], plotItem['urcrnrlon'], plotItemName)
+    def onViewRemoveButtonClicked(self):
+        """
+        Handles the event when the 'Remove View' button is clicked.
 
-        # # Clear inputs
-        # self.nameEdit.clear()
-        # self.cityEdit.clear()
+        This method removes the selected view from the `df_views` DataFrame, except for default views such as
+        'Deutschland' and any views listed in `stateList`. If an attempt is made to remove a default view, an
+        error message is displayed, and the removal is aborted. If the selected view is successfully removed,
+        the DataFrame is updated, saved to an Excel file, and the plot list widget is refreshed. The input fields
+        are cleared, and a success message is displayed.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            None: All exceptions are handled internally. An error message is displayed if the user tries to remove
+            a default view.
+
+        UI Feedback:
+            - Displays a success message if the view is removed successfully.
+            - Displays an error message if the user attempts to remove a default view.
+        """
+        entry = self.plotListWidget.currentItem().text()
+        if entry == 'Deutschland' or entry in self.stateList:
+            self.create_msg_box('Error',
+                                'Cannot remove default views',
+                                'warning')
+            return
+        else:
+            self.df_views = self.df_views[self.df_views.View != entry]
+            self.df_views.to_excel(self.viewsFilePath, index=False)
+            self.setupPlotListWidget()
+            self.ClearViewText()
+            self.create_msg_box('Success',
+                                'View removed successfully')
 
 
 def run_app():
     app = QApplication([])
     mainWin = LectureMapApp()
     mainWin.show()
-    # app.exec()
     sys.exit(app.exec())
 
 
